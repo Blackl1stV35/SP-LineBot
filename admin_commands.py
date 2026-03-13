@@ -7,6 +7,7 @@ import os
 import json
 import logging
 import hashlib
+import re
 from typing import Dict, Any, Optional
 from datetime import datetime
 from pathlib import Path
@@ -66,25 +67,30 @@ class AdminCommandHandler:
         self.drive_handler = drive_handler
         self.users = load_users()
     
-    def execute(self, intent: str, user_id: str, context: Dict[str, Any]) -> str:
+    def execute(self, intent: str, user_id: str, text: str, context: Dict[str, Any]) -> str:
         """Execute admin command."""
         
-        # Extract PIN and args from context
+        # Extract PIN from context or try to find a 4-digit number in the text
         pin = context.get('pin', '')
-        args = context.get('args', [])
+        if not pin:
+            words = text.split()
+            for word in words:
+                if word.isdigit() and len(word) >= 4:
+                    pin = word
+                    break
         
         # Verify PIN
         if not verify_admin_pin(pin):
             logger.warning(f"Admin auth failed from {user_id}")
-            return "❌ Invalid admin PIN"
+            return "❌ Invalid admin PIN. Please start your command with your 4-digit PIN (e.g., '1234 add user...')."
         
         logger.info(f"✅ Admin auth: {intent} from {user_id}")
         
         # Dispatch command
         if intent == "ADMIN_ADD_USER":
-            return self.add_user(args, user_id)
+            return self.add_user(text, user_id)
         elif intent == "ADMIN_DEL_USER":
-            return self.delete_user(args, user_id)
+            return self.delete_user(text, user_id)
         elif intent == "ADMIN_LIST_USERS":
             return self.list_users(user_id)
         else:
@@ -94,38 +100,53 @@ class AdminCommandHandler:
     # ADD USER
     # ========================================================================
     
-    def add_user(self, args: list, admin_user_id: str) -> str:
-        """Add new user (sync with Drive folder)."""
+    def add_user(self, text: str, admin_user_id: str) -> str:
+        """Add new user (sync with Drive folder and email invite)."""
         try:
-            if not args or len(args) < 1:
-                return "❌ Usage: add_user <user_id> [name]"
+            parts = text.split()
+            target_line_id = None
+            target_email = None
+
+            # Regex-style search through the message words
+            for part in parts:
+                if "@" in part and "." in part:
+                    target_email = part
+                elif part.lower().startswith("u") and len(part) > 10:
+                    target_line_id = part.upper()
             
-            new_user_id = args[0]
-            user_name = args[1] if len(args) > 1 else new_user_id
+            if not target_line_id or not target_email:
+                return "❌ Invalid format. Please use: '[PIN] add user [Line_ID] [Email_Address]'"
             
             # Check if already exists
-            if new_user_id in self.users:
-                return f"⚠️  User {new_user_id} already exists"
+            if target_line_id in self.users:
+                return f"⚠️  User {target_line_id} already exists"
             
-            # Create Drive folder
-            success = self.drive_handler.create_user_folder(new_user_id, f"SP-Bot-{user_name}")
+            # Create Drive folder and Share via email
+            success, folder_link = self.drive_handler.create_user_folder(
+                user_id=target_line_id, 
+                user_email=target_email
+            )
+            
             if not success:
-                return f"❌ Failed to create Drive folder for {new_user_id}"
+                return f"❌ Failed to create or share Drive folder for {target_line_id}. Check terminal logs."
             
             # Add to database
-            self.users[new_user_id] = {
-                'name': user_name,
-                'user_id': new_user_id,
+            self.users[target_line_id] = {
+                'email': target_email,
+                'user_id': target_line_id,
                 'added_by': admin_user_id,
                 'created_at': datetime.utcnow().isoformat(),
                 'status': 'active',
-                'folder_id': self.drive_handler.user_folders.get(new_user_id)
+                'folder_id': self.drive_handler.user_folders.get(target_line_id)
             }
             
             save_users(self.users)
             
-            logger.info(f"✅ User added: {new_user_id} ({user_name})")
-            return f"✅ User {new_user_id} ({user_name}) added successfully!"
+            logger.info(f"✅ User added: {target_line_id} ({target_email})")
+            return (f"✅ User {target_line_id} registered!\n\n"
+                    f"Folder created and shared with {target_email}. "
+                    f"They have been emailed an invitation link by Google Drive.\n\n"
+                    f"Direct Link: {folder_link}")
         except Exception as e:
             logger.error(f"Add user failed: {e}")
             return f"❌ Error: {str(e)}"
@@ -134,24 +155,29 @@ class AdminCommandHandler:
     # DELETE USER
     # ========================================================================
     
-    def delete_user(self, args: list, admin_user_id: str) -> str:
-        """Delete user and optionally their Drive folder."""
+    def delete_user(self, text: str, admin_user_id: str) -> str:
+        """Delete user from the internal database."""
         try:
-            if not args or len(args) < 1:
-                return "❌ Usage: delete_user <user_id>"
-            
-            user_id = args[0]
+            parts = text.split()
+            target_line_id = None
+            for part in parts:
+                if part.lower().startswith("u") and len(part) > 10:
+                    target_line_id = part.upper()
+                    break
+
+            if not target_line_id:
+                return "❌ Usage: [PIN] delete user <user_id>"
             
             # Check if exists
-            if user_id not in self.users:
-                return f"⚠️  User {user_id} not found"
+            if target_line_id not in self.users:
+                return f"⚠️  User {target_line_id} not found"
             
             # Remove from database
-            user_info = self.users.pop(user_id)
+            user_info = self.users.pop(target_line_id)
             save_users(self.users)
             
-            logger.info(f"✅ User deleted: {user_id}")
-            return f"✅ User {user_id} ({user_info['name']}) deleted successfully!"
+            logger.info(f"✅ User deleted: {target_line_id}")
+            return f"✅ User {target_line_id} ({user_info.get('email', 'Unknown')}) deleted successfully!"
         except Exception as e:
             logger.error(f"Delete user failed: {e}")
             return f"❌ Error: {str(e)}"
@@ -161,7 +187,7 @@ class AdminCommandHandler:
     # ========================================================================
     
     def list_users(self, admin_user_id: str) -> str:
-        """List all users."""
+        """List all users currently registered in the bot."""
         try:
             if not self.users:
                 return "📭 No users found"
@@ -169,9 +195,9 @@ class AdminCommandHandler:
             user_list = "👥 **Current Users:**\n"
             for user_id, info in self.users.items():
                 status = info['status']
-                name = info.get('name', user_id)
+                email = info.get('email', user_id)
                 created = info['created_at'][:10]  # Date only
-                user_list += f"• {name} ({user_id}) - {status} [added: {created}]\n"
+                user_list += f"• {email} ({user_id}) - {status} [added: {created}]\n"
             
             user_list += f"\n**Total:** {len(self.users)} users"
             
@@ -191,21 +217,21 @@ class AdminCommandHandler:
             results = []
             for user_info in user_list:
                 user_id = user_info.get('user_id')
-                name = user_info.get('name', user_id)
+                email = user_info.get('email', f"{user_id}@example.com")
                 
                 if user_id in self.users:
                     results.append(f"⚠️  {user_id}: already exists")
                     continue
                 
                 # Create folder
-                success = self.drive_handler.create_user_folder(user_id, f"SP-Bot-{name}")
+                success, folder_link = self.drive_handler.create_user_folder(user_id, email)
                 if not success:
                     results.append(f"❌ {user_id}: folder creation failed")
                     continue
                 
                 # Add to database
                 self.users[user_id] = {
-                    'name': name,
+                    'email': email,
                     'user_id': user_id,
                     'added_by': 'batch_init',
                     'created_at': datetime.utcnow().isoformat(),
