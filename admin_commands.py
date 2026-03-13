@@ -22,11 +22,7 @@ USER_DATABASE = Path('drive_sync/users.json')
 
 def verify_admin_pin(pin: str) -> bool:
     """Verify admin PIN (SHA256 hash). Evaluated dynamically at runtime."""
-    # 1. Fetch the hash from .env at the exact moment the command is run
-    # 2. .strip() removes any accidental spaces or quotes you might have in the .env file
-    expected_hash = os.getenv('ADMIN_PIN_HASH', hashlib.sha256('1234'.encode()).hexdigest()).strip().strip('"').strip("'")
-    
-    # Hash the PIN the user typed in
+    expected_hash = os.getenv('ADMIN_PIN_HASH', hashlib.sha256('8899'.encode()).hexdigest()).strip().strip('"').strip("'")
     pin_hash = hashlib.sha256(pin.encode()).hexdigest()
     
     is_valid = pin_hash == expected_hash
@@ -41,21 +37,18 @@ def verify_admin_pin(pin: str) -> bool:
 # ============================================================================
 
 def load_users() -> Dict[str, Dict[str, Any]]:
-    """Load user database."""
     try:
         if USER_DATABASE.exists():
-            with open(USER_DATABASE, 'r') as f:
+            with open(USER_DATABASE, 'r', encoding='utf-8') as f:
                 return json.load(f)
     except Exception as e:
         logger.error(f"Load users failed: {e}")
-    
     return {}
 
 def save_users(users: Dict[str, Dict[str, Any]]):
-    """Save user database."""
     try:
         USER_DATABASE.parent.mkdir(parents=True, exist_ok=True)
-        with open(USER_DATABASE, 'w') as f:
+        with open(USER_DATABASE, 'w', encoding='utf-8') as f:
             json.dump(users, f, indent=2)
         logger.info(f"Saved {len(users)} users")
     except Exception as e:
@@ -66,16 +59,11 @@ def save_users(users: Dict[str, Dict[str, Any]]):
 # ============================================================================
 
 class AdminCommandHandler:
-    """Execute admin commands with PIN auth."""
-    
     def __init__(self, drive_handler):
         self.drive_handler = drive_handler
         self.users = load_users()
     
     def execute(self, intent: str, user_id: str, text: str, context: Dict[str, Any]) -> str:
-        """Execute admin command."""
-        
-        # Extract PIN from context or try to find a 4-digit number in the text
         pin = context.get('pin', '')
         if not pin:
             words = text.split()
@@ -84,14 +72,12 @@ class AdminCommandHandler:
                     pin = word
                     break
         
-        # Verify PIN
         if not verify_admin_pin(pin):
             logger.warning(f"Admin auth failed from {user_id}")
             return "Invalid admin PIN. Please start your command with your 4-digit PIN (e.g., '1234 add user...')."
         
         logger.info(f"Admin auth: {intent} from {user_id}")
         
-        # Dispatch command
         if intent == "ADMIN_ADD_USER":
             return self.add_user(text, user_id)
         elif intent == "ADMIN_DEL_USER":
@@ -101,18 +87,12 @@ class AdminCommandHandler:
         else:
             return "Unknown admin command"
     
-    # ========================================================================
-    # ADD USER
-    # ========================================================================
-    
     def add_user(self, text: str, admin_user_id: str) -> str:
-        """Add new user (sync with Drive folder and email invite)."""
         try:
             parts = text.split()
             target_line_id = None
             target_email = None
 
-            # Regex-style search through the message words
             for part in parts:
                 if "@" in part and "." in part:
                     target_email = part
@@ -122,11 +102,9 @@ class AdminCommandHandler:
             if not target_line_id or not target_email:
                 return "Invalid format. Please use: '[PIN] add user [Line_ID] [Email_Address]'"
             
-            # Check if already exists
             if target_line_id in self.users:
                 return f"User {target_line_id} already exists"
             
-            # Create Drive folder and Share via email
             success, folder_link = self.drive_handler.create_user_folder(
                 user_id=target_line_id, 
                 user_email=target_email
@@ -135,7 +113,6 @@ class AdminCommandHandler:
             if not success:
                 return f"Failed to create or share Drive folder for {target_line_id}. Check terminal logs."
             
-            # Add to database
             self.users[target_line_id] = {
                 'email': target_email,
                 'user_id': target_line_id,
@@ -156,12 +133,7 @@ class AdminCommandHandler:
             logger.error(f"Add user failed: {e}")
             return f"Error: {str(e)}"
     
-    # ========================================================================
-    # DELETE USER
-    # ========================================================================
-    
     def delete_user(self, text: str, admin_user_id: str) -> str:
-        """Delete user from the internal database."""
         try:
             parts = text.split()
             target_line_id = None
@@ -173,11 +145,9 @@ class AdminCommandHandler:
             if not target_line_id:
                 return "Usage: [PIN] delete user <user_id>"
             
-            # Check if exists
             if target_line_id not in self.users:
                 return f"User {target_line_id} not found"
             
-            # Remove from database
             user_info = self.users.pop(target_line_id)
             save_users(self.users)
             
@@ -187,21 +157,16 @@ class AdminCommandHandler:
             logger.error(f"Delete user failed: {e}")
             return f"Error: {str(e)}"
     
-    # ========================================================================
-    # LIST USERS
-    # ========================================================================
-    
     def list_users(self, admin_user_id: str) -> str:
-        """List all users currently registered in the bot."""
         try:
             if not self.users:
-                return "📭 No users found"
+                return "No users found"
             
-            user_list = "👥 **Current Users:**\n"
+            user_list = "**Current Users:**\n"
             for user_id, info in self.users.items():
                 status = info['status']
                 email = info.get('email', user_id)
-                created = info['created_at'][:10]  # Date only
+                created = info['created_at'][:10]
                 user_list += f"• {email} ({user_id}) - {status} [added: {created}]\n"
             
             user_list += f"\n**Total:** {len(self.users)} users"
@@ -212,12 +177,7 @@ class AdminCommandHandler:
             logger.error(f"List users failed: {e}")
             return f"Error: {str(e)}"
     
-    # ========================================================================
-    # BATCH ADD (for initialization)
-    # ========================================================================
-    
     def batch_add_users(self, user_list: list) -> str:
-        """Batch add users from list."""
         try:
             results = []
             for user_info in user_list:
@@ -228,13 +188,11 @@ class AdminCommandHandler:
                     results.append(f"{user_id}: already exists")
                     continue
                 
-                # Create folder
                 success, folder_link = self.drive_handler.create_user_folder(user_id, email)
                 if not success:
                     results.append(f"{user_id}: folder creation failed")
                     continue
                 
-                # Add to database
                 self.users[user_id] = {
                     'email': email,
                     'user_id': user_id,
@@ -243,11 +201,9 @@ class AdminCommandHandler:
                     'status': 'active',
                     'folder_id': self.drive_handler.user_folders.get(user_id)
                 }
-                
                 results.append(f"{user_id}: added")
             
             save_users(self.users)
-            
             summary = f"Batch add complete: {len([r for r in results if r.startswith('')])}/{len(user_list)} successful"
             logger.info(summary)
             return '\n'.join(results) + f"\n\n{summary}"
@@ -255,14 +211,8 @@ class AdminCommandHandler:
             logger.error(f"Batch add failed: {e}")
             return f"Batch add error: {str(e)}"
     
-    # ========================================================================
-    # USER CONTEXT
-    # ========================================================================
-    
     def get_user_context(self, user_id: str) -> Dict[str, Any]:
-        """Get user context (profile, Drive status)."""
         try:
-            # FIX: Case-insensitive search to handle mismatched Line IDs
             user_info = None
             for stored_id, data in self.users.items():
                 if stored_id.lower() == user_id.lower():
@@ -272,7 +222,6 @@ class AdminCommandHandler:
             if not user_info:
                 return {"error": "User not found"}
             
-            # Get Drive context
             drive_context = self.drive_handler.fetch_user_drive_context(user_id)
             
             return {
@@ -282,12 +231,8 @@ class AdminCommandHandler:
         except Exception as e:
             logger.error(f"Get context failed: {e}")
             return {"error": str(e)}
-# ============================================================================
-# INITIALIZE DEFAULT ADMIN PIN
-# ============================================================================
 
 def init_admin_pin(pin: str = '1234'):
-    """Initialize admin PIN (call once on startup)."""
     pin_hash = hashlib.sha256(pin.encode()).hexdigest()
     print(f"Set ADMIN_PIN_HASH env var to: {pin_hash}")
     print(f"   Default PIN: {pin}")

@@ -13,8 +13,11 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 
-# UPDATED: Import the new GenAI SDK
 from google import genai
+
+# Enforce UTF-8 for console output on Windows
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding='utf-8')
 
 logger = logging.getLogger(__name__)
 
@@ -23,23 +26,18 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 
 def find_vscode_logs() -> List[str]:
-    """Find VS Code log files on Windows."""
     log_paths = []
-    
     if sys.platform == 'win32':
-        # Windows VS Code logs
         appdata = os.getenv('APPDATA')
         if appdata:
             log_dir = Path(appdata) / 'Code' / 'logs'
             if log_dir.exists():
                 log_paths.extend(log_dir.glob('**/*.log'))
     elif sys.platform == 'darwin':
-        # macOS VS Code logs
         log_dir = Path.home() / 'Library' / 'Application Support' / 'Code' / 'logs'
         if log_dir.exists():
             log_paths.extend(log_dir.glob('**/*.log'))
     else:
-        # Linux VS Code logs
         log_dir = Path.home() / '.config' / 'Code' / 'logs'
         if log_dir.exists():
             log_paths.extend(log_dir.glob('**/*.log'))
@@ -47,13 +45,10 @@ def find_vscode_logs() -> List[str]:
     return [str(p) for p in log_paths]
 
 def find_app_logs() -> List[str]:
-    """Find SP-LineBot app logs."""
     log_paths = []
     log_dir = Path('logs')
-    
     if log_dir.exists():
         log_paths.extend(log_dir.glob('*.log'))
-        
     return [str(p) for p in log_paths]
 
 # ============================================================================
@@ -61,7 +56,6 @@ def find_app_logs() -> List[str]:
 # ============================================================================
 
 def read_log_tail(file_path: str, lines: int = 200) -> str:
-    """Read the last N lines of a log file."""
     try:
         with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
             content = f.readlines()
@@ -71,14 +65,12 @@ def read_log_tail(file_path: str, lines: int = 200) -> str:
         return ""
 
 def analyze_log_with_gemini(log_text: str) -> Dict[str, Any]:
-    """Analyze log text with Gemini AI using the new SDK."""
     try:
         api_key = os.getenv('GEMINI_API_KEY')
         if not api_key:
             logger.warning("GEMINI_API_KEY not set")
             return {"error": "API key not set"}
         
-        # UPDATED: Initialize the new Client
         client = genai.Client(api_key=api_key)
         
         prompt = f"""
@@ -94,9 +86,8 @@ def analyze_log_with_gemini(log_text: str) -> Dict[str, Any]:
         Provide JSON output strictly with these keys: errors, actions, issues, status. Do not include markdown formatting like ```json.
         """
         
-        logger.info("🔮 Sending log to Gemini 2.5 Flash for analysis...")
+        logger.info("Sending log to Gemini 2.5 Flash for analysis...")
         
-        # UPDATED: Use the new generation syntax
         response = client.models.generate_content(
             model='gemini-2.5-flash',
             contents=prompt,
@@ -104,7 +95,6 @@ def analyze_log_with_gemini(log_text: str) -> Dict[str, Any]:
         
         result = response.text.strip()
         
-        # Strip potential markdown formatting that Gemini might add
         if result.startswith("```json"):
             result = result[7:-3].strip()
         elif result.startswith("```"):
@@ -121,23 +111,20 @@ def analyze_log_with_gemini(log_text: str) -> Dict[str, Any]:
         return {"error": str(e)}
 
 def analyze_all_logs() -> Dict[str, Any]:
-    """Find and analyze all relevant logs."""
     results = {
         'timestamp': datetime.utcnow().isoformat(),
         'logs_analyzed': [],
         'summary': {'total_errors': 0}
     }
     
-    # Analyze App Logs (Priority)
     app_logs = find_app_logs()
     for log_file in app_logs:
-        logger.info(f"📄 Analyzing app log: {log_file}")
+        logger.info(f"Analyzing app log: {log_file}")
         log_text = read_log_tail(log_file, lines=100)
         
         if log_text:
             analysis = analyze_log_with_gemini(log_text)
             
-            # Count errors if available
             errors = analysis.get('errors', [])
             if isinstance(errors, list):
                 results['summary']['total_errors'] += len(errors)
@@ -155,10 +142,9 @@ def analyze_all_logs() -> Dict[str, Any]:
     return results
 
 def save_analysis(results: Dict[str, Any], output_file: str = 'logs/analysis_report.json'):
-    """Save analysis results to JSON."""
     try:
         Path(output_file).parent.mkdir(exist_ok=True)
-        with open(output_file, 'w') as f:
+        with open(output_file, 'w', encoding='utf-8') as f:
             json.dump(results, f, indent=2)
         
         logger.info(f"Analysis saved to {output_file}")
@@ -170,28 +156,23 @@ def save_analysis(results: Dict[str, Any], output_file: str = 'logs/analysis_rep
 # ============================================================================
 
 if __name__ == '__main__':
-    # Setup logging
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
     
-    print("🔍 SP-LineBot Log Analyzer")
+    print("SP-LineBot Log Analyzer")
     print("=" * 60)
     
-    # Run analysis
     results = analyze_all_logs()
     
-    # Display summary
     print("\nAnalysis Summary:")
     print(json.dumps(results['summary'], indent=2))
     
-    # Save report
     save_analysis(results)
     
     print("\nAnalysis complete! Report saved to logs/analysis_report.json")
     
-    # Display first analysis
     if results['logs_analyzed']:
         first_log = results['logs_analyzed'][0]
         print(f"\nFirst Log: {first_log['file']}")

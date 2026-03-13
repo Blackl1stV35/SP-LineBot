@@ -37,6 +37,7 @@ build/
 chroma_db/
 vector_db/
 embeddings_cache/
+chroma_data
 
 # Media & Temp Files
 temp/

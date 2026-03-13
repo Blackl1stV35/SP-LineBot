@@ -44,12 +44,12 @@ class OllamaLLMClient:
         self.host = host
         self.model = model
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        logger.info(f"🔧 OllamaLLMClient init: model={model}, device={self.device}")
+        logger.info(f"OllamaLLMClient init: model={model}, device={self.device}")
         
         # Load sentence transformer for semantic similarity
         try:
             self.encoder = SentenceTransformer('all-MiniLM-L6-v2')
-            logger.info("✅ Sentence transformer loaded (semantic similarity)")
+            logger.info("Sentence transformer loaded (semantic similarity)")
         except Exception as e:
             logger.error(f"Sentence transformer load failed: {e}")
             self.encoder = None
@@ -68,7 +68,7 @@ class OllamaLLMClient:
     async def generate(self, prompt: str, temperature: float = 0.7, max_tokens: int = 256) -> str:
         """Generate response from Ollama local LLM."""
         try:
-            logger.debug(f"🤖 Ollama generate: {prompt[:80]}...")
+            logger.debug(f"Ollama generate: {prompt[:80]}...")
             
             response = requests.post(
                 f"{self.host}/api/generate",
@@ -85,7 +85,7 @@ class OllamaLLMClient:
             
             result = response.json()
             text = result.get('response', '').strip()
-            logger.debug(f"💬 Ollama response: {text[:100]}...")
+            logger.debug(f"Ollama response: {text[:100]}...")
             return text
         except requests.exceptions.Timeout:
             logger.error("Ollama timeout")
@@ -151,7 +151,7 @@ def parse_intent(text: str, ollama_client: Optional[OllamaLLMClient] = None) -> 
                 best_confidence = max_score
                 best_intent = intent
                 
-        # FIX 1: Replaced the fancy '→' with a standard '->' to prevent Windows Unicode crashes
+        # FIX 1: Replaced the fancy '->' with a standard '->' to prevent Windows Unicode crashes
         logger.info(f"Intent parse: '{text_lower[:50]}' -> {best_intent} (conf={best_confidence:.2f})")
         
         if best_confidence >= 0.7:
@@ -195,23 +195,23 @@ def detect_spam(text: str, user_id: str) -> bool:
     # Rule 1: Identical message spam (3+ in 10 seconds)
     recent_10s = [msg for msg, ts in user_history if (now - ts).total_seconds() < 10]
     if len(recent_10s) >= 3 and len(set(recent_10s)) == 1:
-        logger.warning(f"🚫 Spam detected (repeat): {user_id}")
+        logger.warning(f"Spam detected (repeat): {user_id}")
         return True
     
     # Rule 2: Message flood (>10 msgs/min)
     recent_1m = [msg for msg, ts in user_history if (now - ts).total_seconds() < 60]
     if len(recent_1m) > SPAM_THRESHOLD:
-        logger.warning(f"🚫 Spam detected (flood): {user_id} ({len(recent_1m)} msgs/min)")
+        logger.warning(f"Spam detected (flood): {user_id} ({len(recent_1m)} msgs/min)")
         return True
     
     # Rule 3: Excessive length
     if len(text) > 1000:
-        logger.warning(f"🚫 Spam detected (length): {user_id}")
+        logger.warning(f"Spam detected (length): {user_id}")
         return True
     
     # Rule 4: URL/malware patterns
     if re.search(r'(http|ftp)s?://', text) or re.search(r'<script|javascript:/i', text):
-        logger.warning(f"🚫 Spam detected (URL/malware): {user_id}")
+        logger.warning(f"Spam detected (URL/malware): {user_id}")
         return True
     
     return False
@@ -236,7 +236,7 @@ async def query_gemini_async(prompt: str, context: str = "") -> str:
         
         full_prompt = f"{context}\n\nQuery: {prompt}" if context else prompt
         
-        logger.debug(f"🔮 Gemini query: {prompt[:80]}...")
+        logger.debug(f"Gemini query: {prompt[:80]}...")
         
         # UPDATED: Use the new generation syntax and types.GenerateContentConfig
         response = client.models.generate_content(
@@ -249,7 +249,7 @@ async def query_gemini_async(prompt: str, context: str = "") -> str:
         )
         
         result = response.text.strip()
-        logger.info(f"✅ Gemini response: {result[:100]}...")
+        logger.info(f"Gemini response: {result[:100]}...")
         return result
     except Exception as e:
         logger.error(f"Gemini query failed: {e}")

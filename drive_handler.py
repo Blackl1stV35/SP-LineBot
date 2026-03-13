@@ -25,10 +25,6 @@ from docx import Document
 
 logger = logging.getLogger(__name__)
 
-# ============================================================================
-# GOOGLE DRIVE AUTHENTICATION & CLIENT
-# ============================================================================
-
 class DriveHandler:
     """Google Drive document handler with batch processing."""
     
@@ -58,16 +54,16 @@ class DriveHandler:
             
             credentials = service_account.Credentials.from_service_account_file(
                 self.service_account_json,
-                scopes=['https://www.googleapis.com/auth/drive'] # Allows bot to create/edit folders
+                scopes=['https://www.googleapis.com/auth/drive'] 
             )
             
             self.drive_service = build('drive', 'v3', credentials=credentials)
-            self.chroma_client = chromadb.Client()
+            self.chroma_client = chromadb.PersistentClient(path="./chroma_data")
             
             device = 'cuda' if torch.cuda.is_available() else 'cpu'
             self.encoder = SentenceTransformer('all-MiniLM-L6-v2')
             
-            logger.info(f"✅ Google Drive authenticated (device={device})")
+            logger.info(f"Google Drive authenticated (device={device})")
             return True
         except Exception as e:
             logger.error(f"Authentication failed: {e}")
@@ -93,10 +89,6 @@ class DriveHandler:
         except Exception as e:
             logger.error(f"Save processed files failed: {e}")
     
-    # ========================================================================
-    # FOLDER CREATION & SHARING (ALTERNATIVE 1)
-    # ========================================================================
-
     def create_user_folder(self, user_id: str, user_email: Optional[str] = None, folder_name: str = None) -> Tuple[bool, str]:
         """Dynamically create folder for user in Drive and share it via Email."""
         try:
@@ -106,16 +98,14 @@ class DriveHandler:
             
             folder_name = folder_name or f"SP-LineBot-{user_id}"
             
-            # Check if folder already exists
             query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
             results = self.drive_service.files().list(q=query, spaces='drive', fields="files(id, webViewLink)").execute()
             
             if results.get('files'):
                 folder_id = results['files'][0]['id']
                 folder_link = results['files'][0].get('webViewLink', '')
-                logger.info(f"📁 User folder already exists: {folder_id}")
+                logger.info(f"User folder already exists: {folder_id}")
             else:
-                # Create new folder
                 file_metadata = {
                     'name': folder_name,
                     'mimeType': 'application/vnd.google-apps.folder'
@@ -127,24 +117,23 @@ class DriveHandler:
                 
                 folder_id = folder.get('id')
                 folder_link = folder.get('webViewLink', '')
-                logger.info(f"✅ User folder created: {folder_id}")
+                logger.info(f"User folder created: {folder_id}")
 
             self.user_folders[user_id] = folder_id
 
-            # SHARE THE FOLDER WITH THE USER'S EMAIL
             if user_email:
                 try:
                     permission = {
                         'type': 'user',
-                        'role': 'writer',  # 'writer' allows them to upload files to this folder
+                        'role': 'writer',
                         'emailAddress': user_email
                     }
                     self.drive_service.permissions().create(
                         fileId=folder_id,
                         body=permission,
-                        sendNotificationEmail=True # This triggers the actual email to the user!
+                        sendNotificationEmail=True
                     ).execute()
-                    logger.info(f"📧 Successfully sent folder invite to {user_email}")
+                    logger.info(f"Successfully sent folder invite to {user_email}")
                 except Exception as e:
                     logger.error(f"Failed to share folder with {user_email}: {e}")
                     return False, folder_link
@@ -153,10 +142,6 @@ class DriveHandler:
         except Exception as e:
             logger.error(f"Create user folder failed: {e}")
             return False, ""
-    
-    # ========================================================================
-    # DOCUMENT SCANNING & EXTRACTION
-    # ========================================================================
 
     def scan_user_folder(self, user_id: str, folder_id: Optional[str] = None) -> List[Dict[str, Any]]:
         try:
@@ -202,36 +187,83 @@ class DriveHandler:
                         })
         except Exception as e:
             logger.error(f"Recursive scan failed: {e}")
+
+    # ========================================================================
+    # UPDATED: BATCH EMBEDDING WITH SMART CSV ROUTING
+    # ========================================================================
     
-    def extract_text(self, file_id: str, file_name: str) -> str:
+    def batch_embed_documents(self, documents: List[Dict[str, Any]], user_id: str) -> int:
+        if not self.chroma_client or not self.encoder: return 0
+        embedded_count = 0
+        
+        # Import your smart parser
+        from drive_scanner import parse_dense_inventory_csv
+        
         try:
-            ext = Path(file_name).suffix.lower()
-            request = self.drive_service.files().get_media(fileId=file_id)
-            file_stream = io.BytesIO()
-            downloader = MediaIoBaseDownload(file_stream, request)
+            collection = self.chroma_client.get_or_create_collection(name=f"drive_user_{user_id}")
+            for doc in documents:
+                try:
+                    ext = Path(doc['name']).suffix.lower()
+                    
+                    # 1. Download file to temp path
+                    request = self.drive_service.files().get_media(fileId=doc['id'])
+                    file_stream = io.BytesIO()
+                    downloader = MediaIoBaseDownload(file_stream, request)
+                    done = False
+                    while done is False:
+                        status, done = downloader.next_chunk()
+                    
+                    temp_path = f"temp_{doc['id']}{ext}"
+                    with open(temp_path, 'wb') as f:
+                        f.write(file_stream.getbuffer())
+                    
+                    # 2. Extract and Chunk
+                    chunks = []
+                    if ext == '.csv':
+                        logger.info(f"Using smart CSV parser for {doc['name']}")
+                        chunks = parse_dense_inventory_csv(temp_path)
+                    else:
+                        # Fallback to standard extraction for PDFs, Word, etc.
+                        text = ""
+                        if ext == '.pdf': text = self._extract_pdf(temp_path)
+                        elif ext in ['.docx', '.doc']: text = self._extract_docx(temp_path)
+                        elif ext == '.txt':
+                            with open(temp_path, 'r', encoding='utf-8', errors='ignore') as f: text = f.read()
+                        elif ext in ['.xlsx', '.xls']: 
+                            text = self._extract_excel(temp_path)
+                            
+                        if text:
+                            chunks = self._chunk_text(text, chunk_size=500)
+                    
+                    # Clean up temp file
+                    if os.path.exists(temp_path): 
+                        os.remove(temp_path)
+                    
+                    if not chunks: 
+                        continue
+                    
+                    # 3. Embed chunks into ChromaDB
+                    for i, chunk in enumerate(chunks):
+                        embedding = self.encoder.encode(chunk, convert_to_tensor=False)
+                        collection.add(
+                            ids=[f"{user_id}_{doc['id']}_{i}"],
+                            embeddings=[embedding.tolist()],
+                            metadatas=[{'user_id': user_id, 'file_id': doc['id'], 'file_name': doc['name'], 'chunk_idx': i}],
+                            documents=[chunk]
+                        )
+                        embedded_count += 1
+                    
+                    self.processed_files[doc['hash']] = {'file_id': doc['id'], 'name': doc['name']}
+                except Exception as e: 
+                    logger.error(f"Document embedding failed for {doc['name']}: {e}")
             
-            done = False
-            while done is False:
-                status, done = downloader.next_chunk()
-            
-            file_stream.seek(0)
-            temp_path = f"temp_{file_id}"
-            with open(temp_path, 'wb') as f:
-                f.write(file_stream.read())
-            
-            if ext == '.pdf': text = self._extract_pdf(temp_path)
-            elif ext in ['.docx', '.doc']: text = self._extract_docx(temp_path)
-            elif ext == '.txt':
-                with open(temp_path, 'r', encoding='utf-8', errors='ignore') as f: text = f.read()
-            elif ext in ['.xlsx', '.xls']: text = self._extract_excel(temp_path)
-            else: text = ""
-            
-            if os.path.exists(temp_path): os.remove(temp_path)
-            return text
+            self._save_processed_files()
+            return embedded_count
         except Exception as e:
-            logger.error(f"Text extraction failed: {e}")
-            return ""
-    
+            logger.error(f"Batch embedding failed: {e}")
+            return 0
+            
+    # Legacy extraction methods for non-CSV files
     def _extract_pdf(self, file_path: str) -> str:
         try:
             text = []
@@ -254,51 +286,12 @@ class DriveHandler:
                     text.append(' | '.join(str(cell or '') for cell in row))
             return '\n'.join(text)
         except: return ""
-    
-    # ========================================================================
-    # BATCH EMBEDDING
-    # ========================================================================
-    
-    def batch_embed_documents(self, documents: List[Dict[str, Any]], user_id: str) -> int:
-        if not self.chroma_client or not self.encoder: return 0
-        embedded_count = 0
-        try:
-            collection = self.chroma_client.get_or_create_collection(name=f"drive_user_{user_id}")
-            for doc in documents:
-                try:
-                    text = self.extract_text(doc['id'], doc['name'])
-                    if not text: continue
-                    
-                    chunks = self._chunk_text(text, chunk_size=500)
-                    for i, chunk in enumerate(chunks):
-                        embedding = self.encoder.encode(chunk, convert_to_tensor=False)
-                        collection.add(
-                            ids=[f"{user_id}_{doc['id']}_{i}"],
-                            embeddings=[embedding.tolist()],
-                            metadatas=[{'user_id': user_id, 'file_id': doc['id'], 'file_name': doc['name'], 'chunk_idx': i}],
-                            documents=[chunk]
-                        )
-                        embedded_count += 1
-                    
-                    self.processed_files[doc['hash']] = {'file_id': doc['id'], 'name': doc['name']}
-                except Exception as e: logger.error(f"Document embedding failed: {e}")
-            
-            self._save_processed_files()
-            return embedded_count
-        except Exception as e:
-            logger.error(f"Batch embedding failed: {e}")
-            return 0
-    
+        
     def _chunk_text(self, text: str, chunk_size: int = 500) -> List[str]:
         words = text.split()
         return [' '.join(words[i:i+chunk_size]) for i in range(0, len(words), chunk_size)] if words else [text]
 
-    # ========================================================================
-    # USER CONTEXT FETCH (MOVED INSIDE THE CLASS)
-    # ========================================================================
-
     def fetch_user_drive_context(self, user_id: str, top_k: int = 3) -> Dict[str, Any]:
-        """Fetch ChromaDB context for the user."""
         if not self.chroma_client: 
             return {}
         try:
