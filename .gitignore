@@ -1,0 +1,80 @@
+# Environment & Virtual Env
+venv/
+env/
+ENV/
+.venv/
+
+# Secrets & Config (CRITICAL - never commit keys)
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+secrets.json
+config_local.py
+
+# API Keys & Credentials
+GOOGLE_SERVICE_ACCOUNT_JSON
+GOOGLE_SERVICE_ACCOUNT_KEY.json
+LINE_CHANNEL_SECRET_*
+gemini_key.json
+
+# Python runtime
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Database & Cache
+*.db
+*.sqlite
+*.sqlite3
+*.dbm
+chroma_db/
+vector_db/
+embeddings_cache/
+
+# Media & Temp Files
+temp/
+tmp/
+uploads/
+processed_images/
+audio_temp/
+voice_cache/
+*.wav
+*.mp3
+*.ogg
+
+# Logs
+logs/
+*.log
+debug.log
+error.log
+
+# IDE & OS
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+*.code-workspace
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Ollama models (local, large)
+ollama_models/
+models/
+
+# Drive sync (large files)
+external_drive_cache/
+gdrive_sync/
+
