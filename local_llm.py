@@ -9,7 +9,7 @@ import os
 import json
 import logging
 import re
-from typing import Tuple, Dict, List
+from typing import Optional, Tuple, Dict, List
 from datetime import datetime, timedelta
 from collections import defaultdict
 
@@ -111,57 +111,57 @@ class OllamaLLMClient:
 # INTENT PARSING
 # ============================================================================
 
-def parse_intent(text: str, ollama_client: OllamaLLMClient, threshold: float = 0.7) -> Tuple[str, float]:
-    """
-    Parse intent using semantic similarity (conf > 0.7).
-    Falls back to FALLBACK intent if low confidence.
-    """
-    text_lower = text.lower().strip()
+def parse_intent(text: str, ollama_client: Optional[OllamaLLMClient] = None) -> Tuple[str, float]:
+    """Parse user intent using hardcoded rules first, then semantic similarity."""
+    if not text:
+        return "FALLBACK", 0.0
+        
+    text_lower = text.lower()
     
-    # Build intent phrases with their commands
-    intent_phrases = {}
-    for intent, phrases in FIXED_COMMANDS.items():
-        intent_phrases[intent] = phrases
-    
-    # Semantic similarity using sentence transformer
-    if ollama_client.encoder:
-        try:
-            # Embed user text
-            user_embedding = ollama_client.encoder.encode(text_lower, convert_to_tensor=True)
-            
-            # Find best matching intent
-            best_intent = "FALLBACK"
-            best_confidence = 0.0
-            
-            for intent, phrases in intent_phrases.items():
-                phrase_embeddings = ollama_client.encoder.encode(phrases, convert_to_tensor=True)
+    # --- FIX 2: Hardcoded Shortcuts for Admin Commands ---
+    if "add user" in text_lower:
+        logger.info(f"Intent parse shortcut: '{text_lower[:50]}' -> ADMIN_ADD_USER (conf=1.00)")
+        return "ADMIN_ADD_USER", 1.0
+    elif "delete user" in text_lower or "remove user" in text_lower:
+        logger.info(f"Intent parse shortcut: '{text_lower[:50]}' -> ADMIN_DEL_USER (conf=1.00)")
+        return "ADMIN_DEL_USER", 1.0
+    elif "list users" in text_lower:
+        logger.info(f"Intent parse shortcut: '{text_lower[:50]}' -> ADMIN_LIST_USERS (conf=1.00)")
+        return "ADMIN_LIST_USERS", 1.0
+
+    # --- Standard Semantic Similarity for other commands ---
+    if not ollama_client or not ollama_client.encoder:
+        return "FALLBACK", 0.0
+        
+    try:
+        query_embedding = ollama_client.encoder.encode(text_lower, convert_to_tensor=True)
+        
+        best_intent = "FALLBACK"
+        best_confidence = 0.0
+        
+        for intent, phrases in FIXED_COMMANDS.items():
+            if intent.startswith("ADMIN_"): # Skip admin commands since we handled them above
+                continue
                 
-                # Compute similarity
-                similarities = util.pytorch_cos_sim(user_embedding, phrase_embeddings)
-                max_sim = similarities.max().item()
+            phrase_embeddings = ollama_client.encoder.encode(phrases, convert_to_tensor=True)
+            cos_scores = util.cos_sim(query_embedding, phrase_embeddings)[0]
+            max_score = torch.max(cos_scores).item()
+            
+            if max_score > best_confidence:
+                best_confidence = max_score
+                best_intent = intent
                 
-                if max_sim > best_confidence:
-                    best_confidence = max_sim
-                    best_intent = intent
-            
-            logger.info(f"Intent parse: '{text_lower[:50]}' → {best_intent} (conf={best_confidence:.2f})")
-            
-            # Apply threshold
-            if best_confidence < threshold:
-                return "FALLBACK", best_confidence
-            
+        # FIX 1: Replaced the fancy '→' with a standard '->' to prevent Windows Unicode crashes
+        logger.info(f"Intent parse: '{text_lower[:50]}' -> {best_intent} (conf={best_confidence:.2f})")
+        
+        if best_confidence >= 0.7:
             return best_intent, best_confidence
-        except Exception as e:
-            logger.error(f"Semantic similarity failed: {e}")
-    
-    # Fallback: simple keyword matching
-    for intent, phrases in intent_phrases.items():
-        for phrase in phrases:
-            if phrase in text_lower:
-                logger.info(f"Intent parse (keyword): '{text_lower[:50]}' → {intent}")
-                return intent, 0.8
-    
-    return "FALLBACK", 0.3
+        else:
+            return "FALLBACK", best_confidence
+            
+    except Exception as e:
+        logger.error(f"Intent parsing failed: {e}")
+        return "FALLBACK", 0.0
 
 # ============================================================================
 # SPAM DETECTION
