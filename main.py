@@ -89,33 +89,33 @@ admin_handler = AdminCommandHandler(drive_handler)
 async def startup_event():
     """Initialize GPU, warm up Ollama, check timezone."""
     logger.info("=" * 60)
-    logger.info("🚀 SP-LineBot Starting Up")
+    logger.info("SP-LineBot Starting Up")
     logger.info("=" * 60)
     
     # GPU check
     cuda_available = torch.cuda.is_available()
     gpu_name = torch.cuda.get_device_name(0) if cuda_available else "N/A"
-    logger.info(f"🖥️  GPU Available: {cuda_available}, Device: {gpu_name}")
-    logger.info(f"🔥 Torch CUDA: {torch.cuda.is_available()}")
+    logger.info(f"GPU Available: {cuda_available}, Device: {gpu_name}")
+    logger.info(f"Torch CUDA: {torch.cuda.is_available()}")
     
     # Ollama warm-up
     try:
         response = await ollama_client.health_check()
-        logger.info(f"✅ Ollama Status: {response}")
+        logger.info(f"Ollama Status: {response}")
     except Exception as e:
-        logger.warning(f"⚠️  Ollama not running: {e}. Run 'ollama serve' manually.")
+        logger.warning(f"Ollama not running: {e}. Run 'ollama serve' manually.")
     
     # Dynamic timezone (Bangkok default)
     tz = timezone(timedelta(hours=7))
     now = datetime.now(tz)
-    logger.info(f"⏰ Timezone: UTC+7 (Bangkok), Current: {now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+    logger.info(f"Timezone: UTC+7 (Bangkok), Current: {now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
     
     # Drive handler initialization
     try:
         drive_handler.authenticate()
-        logger.info("✅ Google Drive authenticated")
+        logger.info("Google Drive authenticated")
     except Exception as e:
-        logger.error(f"❌ Google Drive auth failed: {e}")
+        logger.error(f"Google Drive auth failed: {e}")
     
     logger.info("=" * 60)
 
@@ -157,11 +157,11 @@ def handle_text_message(event: MessageEvent):
     user_id = event.source.user_id
     text = event.message.text
     
-    logger.info(f"📝 Text from {user_id}: {text[:100]}")
+    logger.info(f"Text from {user_id}: {text[:100]}")
     
     # Spam detection
     if detect_spam(text, user_id):
-        logger.warning(f"🚫 Spam detected from {user_id}")
+        logger.warning(f"Spam detected from {user_id}")
         return
     
     # Fetch user context (Drive files, history) - properly passing drive_handler
@@ -193,7 +193,7 @@ def handle_image_message(event: MessageEvent):
     user_id = event.source.user_id
     message_id = event.message.id
     
-    logger.info(f"🖼️  Image from {user_id} (ID: {message_id})")
+    logger.info(f"Image from {user_id} (ID: {message_id})")
     
     # Background task
     from fastapi import BackgroundTasks
@@ -223,7 +223,7 @@ def process_image_message(user_id: str, message_id: str):
         # Clean temp
         os.remove(img_path)
         
-        logger.info(f"✅ Image processed and embedded for {user_id}")
+        logger.info(f"Image processed and embedded for {user_id}")
     except Exception as e:
         logger.error(f"Image processing failed: {e}")
 
@@ -234,7 +234,7 @@ def handle_voice_message(event: MessageEvent):
     message_id = event.message.id
     duration = event.message.duration
     
-    logger.info(f"🎤 Voice from {user_id} (duration: {duration}ms)")
+    logger.info(f"Voice from {user_id} (duration: {duration}ms)")
     
     # Background processing
     from fastapi import BackgroundTasks
@@ -273,7 +273,7 @@ def process_voice_message(user_id: str, message_id: str):
         # Clean temp
         os.remove(audio_path)
         
-        logger.info(f"✅ Voice processed for {user_id}")
+        logger.info(f"Voice processed for {user_id}")
     except Exception as e:
         logger.error(f"Voice processing failed: {e}")
 
@@ -316,5 +316,5 @@ def handle_gemini_escalation(text: str, user_id: str) -> str:
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 8000))
-    logger.info(f"🌐 Starting FastAPI on 0.0.0.0:{port}")
+    logger.info(f"Starting FastAPI on 0.0.0.0:{port}")
     uvicorn_run(app, host='0.0.0.0', port=port, log_level='info')
