@@ -18,16 +18,21 @@ logger = logging.getLogger(__name__)
 # ADMIN PIN AUTHENTICATION
 # ============================================================================
 
-ADMIN_PIN_HASH = os.getenv('ADMIN_PIN_HASH', hashlib.sha256('8899'.encode()).hexdigest())
 USER_DATABASE = Path('drive_sync/users.json')
 
 def verify_admin_pin(pin: str) -> bool:
-    """Verify admin PIN (SHA256 hash)."""
+    """Verify admin PIN (SHA256 hash). Evaluated dynamically at runtime."""
+    # 1. Fetch the hash from .env at the exact moment the command is run
+    # 2. .strip() removes any accidental spaces or quotes you might have in the .env file
+    expected_hash = os.getenv('ADMIN_PIN_HASH', hashlib.sha256('1234'.encode()).hexdigest()).strip().strip('"').strip("'")
+    
+    # Hash the PIN the user typed in
     pin_hash = hashlib.sha256(pin.encode()).hexdigest()
-    is_valid = pin_hash == ADMIN_PIN_HASH
+    
+    is_valid = pin_hash == expected_hash
     
     if not is_valid:
-        logger.warning(f"Invalid admin PIN attempt")
+        logger.warning(f"Invalid admin PIN attempt. Expected: {expected_hash[:10]}... Got: {pin_hash[:10]}...")
     
     return is_valid
 
