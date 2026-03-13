@@ -67,7 +67,7 @@ class DriveHandler:
             device = 'cuda' if torch.cuda.is_available() else 'cpu'
             self.encoder = SentenceTransformer('all-MiniLM-L6-v2')
             
-            logger.info(f"✅ Google Drive authenticated (device={device})")
+            logger.info(f"Google Drive authenticated (device={device})")
             return True
         except Exception as e:
             logger.error(f"Authentication failed: {e}")
@@ -113,7 +113,7 @@ class DriveHandler:
             if results.get('files'):
                 folder_id = results['files'][0]['id']
                 folder_link = results['files'][0].get('webViewLink', '')
-                logger.info(f"📁 User folder already exists: {folder_id}")
+                logger.info(f"User folder already exists: {folder_id}")
             else:
                 # Create new folder
                 file_metadata = {
@@ -127,7 +127,7 @@ class DriveHandler:
                 
                 folder_id = folder.get('id')
                 folder_link = folder.get('webViewLink', '')
-                logger.info(f"✅ User folder created: {folder_id}")
+                logger.info(f"User folder created: {folder_id}")
 
             self.user_folders[user_id] = folder_id
 
@@ -144,7 +144,7 @@ class DriveHandler:
                         body=permission,
                         sendNotificationEmail=True # This triggers the actual email to the user!
                     ).execute()
-                    logger.info(f"📧 Successfully sent folder invite to {user_email}")
+                    logger.info(f"Successfully sent folder invite to {user_email}")
                 except Exception as e:
                     logger.error(f"Failed to share folder with {user_email}: {e}")
                     return False, folder_link
