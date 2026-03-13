@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 # ADMIN PIN AUTHENTICATION
 # ============================================================================
 
-ADMIN_PIN_HASH = os.getenv('ADMIN_PIN_HASH', hashlib.sha256('1234'.encode()).hexdigest())
+ADMIN_PIN_HASH = os.getenv('ADMIN_PIN_HASH', hashlib.sha256('Spauto12345'.encode()).hexdigest())
 USER_DATABASE = Path('drive_sync/users.json')
 
 def verify_admin_pin(pin: str) -> bool:
@@ -52,7 +52,7 @@ def save_users(users: Dict[str, Dict[str, Any]]):
         USER_DATABASE.parent.mkdir(parents=True, exist_ok=True)
         with open(USER_DATABASE, 'w') as f:
             json.dump(users, f, indent=2)
-        logger.info(f"✅ Saved {len(users)} users")
+        logger.info(f"Saved {len(users)} users")
     except Exception as e:
         logger.error(f"Save users failed: {e}")
 
@@ -82,9 +82,9 @@ class AdminCommandHandler:
         # Verify PIN
         if not verify_admin_pin(pin):
             logger.warning(f"Admin auth failed from {user_id}")
-            return "❌ Invalid admin PIN. Please start your command with your 4-digit PIN (e.g., '1234 add user...')."
+            return "Invalid admin PIN. Please start your command with your 4-digit PIN (e.g., '1234 add user...')."
         
-        logger.info(f"✅ Admin auth: {intent} from {user_id}")
+        logger.info(f"Admin auth: {intent} from {user_id}")
         
         # Dispatch command
         if intent == "ADMIN_ADD_USER":
@@ -115,11 +115,11 @@ class AdminCommandHandler:
                     target_line_id = part.upper()
             
             if not target_line_id or not target_email:
-                return "❌ Invalid format. Please use: '[PIN] add user [Line_ID] [Email_Address]'"
+                return "Invalid format. Please use: '[PIN] add user [Line_ID] [Email_Address]'"
             
             # Check if already exists
             if target_line_id in self.users:
-                return f"⚠️  User {target_line_id} already exists"
+                return f"User {target_line_id} already exists"
             
             # Create Drive folder and Share via email
             success, folder_link = self.drive_handler.create_user_folder(
@@ -128,7 +128,7 @@ class AdminCommandHandler:
             )
             
             if not success:
-                return f"❌ Failed to create or share Drive folder for {target_line_id}. Check terminal logs."
+                return f"Failed to create or share Drive folder for {target_line_id}. Check terminal logs."
             
             # Add to database
             self.users[target_line_id] = {
@@ -142,14 +142,14 @@ class AdminCommandHandler:
             
             save_users(self.users)
             
-            logger.info(f"✅ User added: {target_line_id} ({target_email})")
-            return (f"✅ User {target_line_id} registered!\n\n"
+            logger.info(f"User added: {target_line_id} ({target_email})")
+            return (f"User {target_line_id} registered!\n\n"
                     f"Folder created and shared with {target_email}. "
                     f"They have been emailed an invitation link by Google Drive.\n\n"
                     f"Direct Link: {folder_link}")
         except Exception as e:
             logger.error(f"Add user failed: {e}")
-            return f"❌ Error: {str(e)}"
+            return f"Error: {str(e)}"
     
     # ========================================================================
     # DELETE USER
@@ -166,21 +166,21 @@ class AdminCommandHandler:
                     break
 
             if not target_line_id:
-                return "❌ Usage: [PIN] delete user <user_id>"
+                return "Usage: [PIN] delete user <user_id>"
             
             # Check if exists
             if target_line_id not in self.users:
-                return f"⚠️  User {target_line_id} not found"
+                return f"User {target_line_id} not found"
             
             # Remove from database
             user_info = self.users.pop(target_line_id)
             save_users(self.users)
             
-            logger.info(f"✅ User deleted: {target_line_id}")
-            return f"✅ User {target_line_id} ({user_info.get('email', 'Unknown')}) deleted successfully!"
+            logger.info(f"User deleted: {target_line_id}")
+            return f"User {target_line_id} ({user_info.get('email', 'Unknown')}) deleted successfully!"
         except Exception as e:
             logger.error(f"Delete user failed: {e}")
-            return f"❌ Error: {str(e)}"
+            return f"Error: {str(e)}"
     
     # ========================================================================
     # LIST USERS
@@ -205,7 +205,7 @@ class AdminCommandHandler:
             return user_list
         except Exception as e:
             logger.error(f"List users failed: {e}")
-            return f"❌ Error: {str(e)}"
+            return f"Error: {str(e)}"
     
     # ========================================================================
     # BATCH ADD (for initialization)
@@ -220,13 +220,13 @@ class AdminCommandHandler:
                 email = user_info.get('email', f"{user_id}@example.com")
                 
                 if user_id in self.users:
-                    results.append(f"⚠️  {user_id}: already exists")
+                    results.append(f"{user_id}: already exists")
                     continue
                 
                 # Create folder
                 success, folder_link = self.drive_handler.create_user_folder(user_id, email)
                 if not success:
-                    results.append(f"❌ {user_id}: folder creation failed")
+                    results.append(f"{user_id}: folder creation failed")
                     continue
                 
                 # Add to database
@@ -239,16 +239,16 @@ class AdminCommandHandler:
                     'folder_id': self.drive_handler.user_folders.get(user_id)
                 }
                 
-                results.append(f"✅ {user_id}: added")
+                results.append(f"{user_id}: added")
             
             save_users(self.users)
             
-            summary = f"Batch add complete: {len([r for r in results if r.startswith('✅')])}/{len(user_list)} successful"
+            summary = f"Batch add complete: {len([r for r in results if r.startswith('')])}/{len(user_list)} successful"
             logger.info(summary)
             return '\n'.join(results) + f"\n\n{summary}"
         except Exception as e:
             logger.error(f"Batch add failed: {e}")
-            return f"❌ Batch add error: {str(e)}"
+            return f"Batch add error: {str(e)}"
     
     # ========================================================================
     # USER CONTEXT
@@ -280,6 +280,6 @@ class AdminCommandHandler:
 def init_admin_pin(pin: str = '1234'):
     """Initialize admin PIN (call once on startup)."""
     pin_hash = hashlib.sha256(pin.encode()).hexdigest()
-    print(f"🔐 Set ADMIN_PIN_HASH env var to: {pin_hash}")
+    print(f"Set ADMIN_PIN_HASH env var to: {pin_hash}")
     print(f"   Default PIN: {pin}")
     print(f"   Command: export ADMIN_PIN_HASH={pin_hash}")
