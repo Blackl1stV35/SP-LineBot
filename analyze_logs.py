@@ -161,7 +161,7 @@ def save_analysis(results: Dict[str, Any], output_file: str = 'logs/analysis_rep
         with open(output_file, 'w') as f:
             json.dump(results, f, indent=2)
         
-        logger.info(f"✅ Analysis saved to {output_file}")
+        logger.info(f"Analysis saved to {output_file}")
     except Exception as e:
         logger.error(f"Save failed: {e}")
 
@@ -183,18 +183,18 @@ if __name__ == '__main__':
     results = analyze_all_logs()
     
     # Display summary
-    print("\n📊 Analysis Summary:")
+    print("\nAnalysis Summary:")
     print(json.dumps(results['summary'], indent=2))
     
     # Save report
     save_analysis(results)
     
-    print("\n✅ Analysis complete! Report saved to logs/analysis_report.json")
+    print("\nAnalysis complete! Report saved to logs/analysis_report.json")
     
     # Display first analysis
     if results['logs_analyzed']:
         first_log = results['logs_analyzed'][0]
-        print(f"\n📄 First Log: {first_log['file']}")
+        print(f"\nFirst Log: {first_log['file']}")
         print(f"Errors Found: {first_log['metadata'].get('errors_found', 0)}")
         
         if 'analysis' in first_log:
