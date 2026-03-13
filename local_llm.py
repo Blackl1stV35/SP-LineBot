@@ -30,10 +30,13 @@ FIXED_COMMANDS = {
     "ADMIN_ADD_USER": ["add user", "new member", "register user", "create account"],
     "ADMIN_DEL_USER": ["remove user", "delete member", "kick user"],
     "ADMIN_LIST_USERS": ["list users", "show members", "who is member"],
-    "DRIVE_SCAN": ["scan drive", "fetch files", "load documents", "fetch data"],
-    "INVENTORY_LOOKUP": ["check stock", "inventory status", "product info", "how much"],
-    "INVENTORY_UPDATE": ["update stock", "add inventory", "reduce quantity"],
-    "REPAIR_SUGGEST": ["repair advice", "fix suggestion", "how to repair"],
+    "DRIVE_SCAN": ["scan drive", "fetch files", "load documents", "fetch data", "สแกนไดรฟ์", "อัพเดทไฟล์", "ดึงข้อมูล"],
+    "INVENTORY_LOOKUP": [
+        "check stock", "inventory status", "product info", "how much", 
+        "ใครเบิก", "เบิกอะไรไปบ้าง", "เช็คสต็อก", "เหลือเท่าไหร่", "มีของไหม", "ตรวจสอบวัสดุ"
+    ],
+    "INVENTORY_UPDATE": ["update stock", "add inventory", "reduce quantity", "เพิ่มสต็อก", "ลดสต็อก", "อัพเดทจำนวน"],
+    "REPAIR_SUGGEST": ["repair advice", "fix suggestion", "how to repair", "ซ่อมยังไง", "วิธีซ่อม", "แนะนำการซ่อม"],
     "FALLBACK": ["unknown", "help", "info"]
 }
 
