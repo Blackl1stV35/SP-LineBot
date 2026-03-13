@@ -15,7 +15,7 @@ config_local.py
 
 # API Keys & Credentials
 GOOGLE_SERVICE_ACCOUNT_JSON
-GOOGLE_SERVICE_ACCOUNT_KEY.json
+nth-station-489109-s1-6c5ccb8ccef4.json
 LINE_CHANNEL_SECRET_*
 gemini_key.json
 
