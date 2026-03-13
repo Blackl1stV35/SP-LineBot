@@ -262,10 +262,15 @@ class AdminCommandHandler:
     def get_user_context(self, user_id: str) -> Dict[str, Any]:
         """Get user context (profile, Drive status)."""
         try:
-            if user_id not in self.users:
+            # FIX: Case-insensitive search to handle mismatched Line IDs
+            user_info = None
+            for stored_id, data in self.users.items():
+                if stored_id.lower() == user_id.lower():
+                    user_info = data
+                    break
+                    
+            if not user_info:
                 return {"error": "User not found"}
-            
-            user_info = self.users[user_id]
             
             # Get Drive context
             drive_context = self.drive_handler.fetch_user_drive_context(user_id)
@@ -277,7 +282,6 @@ class AdminCommandHandler:
         except Exception as e:
             logger.error(f"Get context failed: {e}")
             return {"error": str(e)}
-
 # ============================================================================
 # INITIALIZE DEFAULT ADMIN PIN
 # ============================================================================
