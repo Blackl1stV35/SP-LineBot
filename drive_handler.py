@@ -58,7 +58,7 @@ class DriveHandler:
             
             credentials = service_account.Credentials.from_service_account_file(
                 self.service_account_json,
-                scopes=['https://www.googleapis.com/auth/drive'] # UPDATED: Removed .readonly so bot can create folders
+                scopes=['https://www.googleapis.com/auth/drive'] # Allows bot to create/edit folders
             )
             
             self.drive_service = build('drive', 'v3', credentials=credentials)
@@ -67,7 +67,7 @@ class DriveHandler:
             device = 'cuda' if torch.cuda.is_available() else 'cpu'
             self.encoder = SentenceTransformer('all-MiniLM-L6-v2')
             
-            logger.info(f"Google Drive authenticated (device={device})")
+            logger.info(f"✅ Google Drive authenticated (device={device})")
             return True
         except Exception as e:
             logger.error(f"Authentication failed: {e}")
@@ -113,7 +113,7 @@ class DriveHandler:
             if results.get('files'):
                 folder_id = results['files'][0]['id']
                 folder_link = results['files'][0].get('webViewLink', '')
-                logger.info(f"User folder already exists: {folder_id}")
+                logger.info(f"📁 User folder already exists: {folder_id}")
             else:
                 # Create new folder
                 file_metadata = {
@@ -127,7 +127,7 @@ class DriveHandler:
                 
                 folder_id = folder.get('id')
                 folder_link = folder.get('webViewLink', '')
-                logger.info(f"User folder created: {folder_id}")
+                logger.info(f"✅ User folder created: {folder_id}")
 
             self.user_folders[user_id] = folder_id
 
@@ -144,7 +144,7 @@ class DriveHandler:
                         body=permission,
                         sendNotificationEmail=True # This triggers the actual email to the user!
                     ).execute()
-                    logger.info(f"Successfully sent folder invite to {user_email}")
+                    logger.info(f"📧 Successfully sent folder invite to {user_email}")
                 except Exception as e:
                     logger.error(f"Failed to share folder with {user_email}: {e}")
                     return False, folder_link
@@ -293,13 +293,16 @@ class DriveHandler:
         words = text.split()
         return [' '.join(words[i:i+chunk_size]) for i in range(0, len(words), chunk_size)] if words else [text]
 
-# ============================================================================
-# USER CONTEXT FETCH
-# ============================================================================
+    # ========================================================================
+    # USER CONTEXT FETCH (MOVED INSIDE THE CLASS)
+    # ========================================================================
 
-def fetch_user_drive_context(user_id: str, drive_handler: Optional[DriveHandler] = None, top_k: int = 3) -> Dict[str, Any]:
-    if not drive_handler or not drive_handler.chroma_client: return {}
-    try:
-        count = drive_handler.chroma_client.get_or_create_collection(name=f"drive_user_{user_id}").count()
-        return {'user_id': user_id, 'document_count': count, 'status': 'ready' if count > 0 else 'empty'}
-    except Exception as e: return {'error': str(e)}
+    def fetch_user_drive_context(self, user_id: str, top_k: int = 3) -> Dict[str, Any]:
+        """Fetch ChromaDB context for the user."""
+        if not self.chroma_client: 
+            return {}
+        try:
+            count = self.chroma_client.get_or_create_collection(name=f"drive_user_{user_id}").count()
+            return {'user_id': user_id, 'document_count': count, 'status': 'ready' if count > 0 else 'empty'}
+        except Exception as e: 
+            return {'error': str(e)}
