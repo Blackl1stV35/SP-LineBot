@@ -7,6 +7,7 @@ Manages user document contexts with metadata tracking.
 import os
 import json
 import logging
+import io  # Added for memory-efficient downloads
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 from datetime import datetime
@@ -14,9 +15,9 @@ import hashlib
 
 from google.oauth2 import service_account
 from google.auth.transport.requests import Request
-from google.cloud import drive_v3
+# Removed: from google.cloud import drive_v3 (Fixes ImportError)
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
+from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload # Added MediaIoBaseDownload
 import chromadb
 from sentence_transformers import SentenceTransformer
 import torch
@@ -230,30 +231,36 @@ class DriveHandler:
         try:
             ext = Path(file_name).suffix.lower()
             
-            # Download file
+            # Download file using MediaIoBaseDownload for better reliability
             request = self.drive_service.files().get_media(fileId=file_id)
-            fh = open(f"temp_{file_id}", 'wb')
-            downloader = MediaFileDownload(request)
-            while not downloader.progress:
-                pass
-            fh.write(downloader.getbytes(downloader.size))
-            fh.close()
+            file_stream = io.BytesIO()
+            downloader = MediaIoBaseDownload(file_stream, request)
+            
+            done = False
+            while done is False:
+                status, done = downloader.next_chunk()
+            
+            file_stream.seek(0)
+            temp_path = f"temp_{file_id}"
+            with open(temp_path, 'wb') as f:
+                f.write(file_stream.read())
             
             # Extract based on type
             if ext == '.pdf':
-                text = self._extract_pdf(f"temp_{file_id}")
+                text = self._extract_pdf(temp_path)
             elif ext in ['.docx', '.doc']:
-                text = self._extract_docx(f"temp_{file_id}")
+                text = self._extract_docx(temp_path)
             elif ext == '.txt':
-                with open(f"temp_{file_id}", 'r', encoding='utf-8', errors='ignore') as f:
+                with open(temp_path, 'r', encoding='utf-8', errors='ignore') as f:
                     text = f.read()
             elif ext in ['.xlsx', '.xls']:
-                text = self._extract_excel(f"temp_{file_id}")
+                text = self._extract_excel(temp_path)
             else:
                 text = ""
             
             # Clean up
-            os.remove(f"temp_{file_id}")
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
             
             logger.info(f"✅ Extracted {len(text)} chars from {file_name}")
             return text
