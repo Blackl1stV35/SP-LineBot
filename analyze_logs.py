@@ -13,7 +13,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 
-import google.generativeai as genai
+# UPDATED: Import the new GenAI SDK
+from google import genai
 
 logger = logging.getLogger(__name__)
 
@@ -43,237 +44,120 @@ def find_vscode_logs() -> List[str]:
         if log_dir.exists():
             log_paths.extend(log_dir.glob('**/*.log'))
     
-    # SP-LineBot logs
-    local_logs = Path('logs')
-    if local_logs.exists():
-        log_paths.extend(local_logs.glob('**/*.log'))
-    
-    return [str(p) for p in log_paths if p.is_file()]
+    return [str(p) for p in log_paths]
 
-# ============================================================================
-# LOG PARSING
-# ============================================================================
-
-class LogParser:
-    """Parse and structure logs."""
+def find_app_logs() -> List[str]:
+    """Find SP-LineBot app logs."""
+    log_paths = []
+    log_dir = Path('logs')
     
-    ERROR_PATTERNS = {
-        'error': r'\[ERROR\]|❌|Exception|Traceback',
-        'warning': r'\[WARN\]|⚠️|Warning',
-        'timeout': r'timeout|Timeout|TIMEOUT',
-        'auth': r'auth|Auth|AUTH|permission|Permission',
-        'memory': r'Memory|memory|OutOfMemory|OOM',
-        'network': r'Connection|connection|ConnectionError|timeout'
-    }
-    
-    def __init__(self, log_file: str):
-        self.log_file = log_file
-        self.lines = []
-        self.errors = []
-        self.warnings = []
-        self.actions = []
-        self.metadata = {}
-    
-    def load(self) -> bool:
-        """Load log file."""
-        try:
-            with open(self.log_file, 'r', encoding='utf-8', errors='ignore') as f:
-                self.lines = f.readlines()
-            
-            logger.info(f"✅ Loaded {len(self.lines)} lines from {self.log_file}")
-            return True
-        except Exception as e:
-            logger.error(f"Load failed: {e}")
-            return False
-    
-    def parse(self) -> Dict[str, Any]:
-        """Parse log into structured format."""
-        try:
-            # Extract errors
-            for line in self.lines:
-                for error_type, pattern in self.ERROR_PATTERNS.items():
-                    if re.search(pattern, line):
-                        self.errors.append({'type': error_type, 'line': line.strip()})
-                        break
-            
-            # Extract timestamps
-            timestamps = []
-            for line in self.lines:
-                match = re.search(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}', line)
-                if match:
-                    timestamps.append(match.group())
-            
-            # Extract API calls (Gemini, Ollama, Drive, etc.)
-            api_calls = []
-            for line in self.lines:
-                if any(api in line for api in ['gemini', 'ollama', 'drive', 'api', 'http']):
-                    api_calls.append(line.strip())
-            
-            self.metadata = {
-                'file': self.log_file,
-                'lines_total': len(self.lines),
-                'errors_found': len(self.errors),
-                'timestamps': sorted(set(timestamps)),
-                'api_calls_count': len(api_calls),
-                'parsed_at': datetime.utcnow().isoformat()
-            }
-            
-            logger.info(f"Parsed log: {len(self.errors)} errors, {len(api_calls)} API calls")
-            return {
-                'metadata': self.metadata,
-                'errors': self.errors[:20],  # Top 20 errors
-                'api_calls': api_calls[:10],
-                'full_content': ''.join(self.lines[-1000:])  # Last 1000 lines for Gemini
-            }
-        except Exception as e:
-            logger.error(f"Parse failed: {e}")
-            return {'error': str(e)}
-
-# ============================================================================
-# GEMINI ANALYSIS
-# ============================================================================
-
-class GeminiLogAnalyzer:
-    """Analyze logs with Gemini AI."""
-    
-    def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or os.getenv('GEMINI_API_KEY')
+    if log_dir.exists():
+        log_paths.extend(log_dir.glob('*.log'))
         
-        if self.api_key:
-            genai.configure(api_key=self.api_key)
-            self.model = genai.GenerativeModel('gemini-pro')
-        else:
+    return [str(p) for p in log_paths]
+
+# ============================================================================
+# LOG ANALYSIS (GEMINI AI)
+# ============================================================================
+
+def read_log_tail(file_path: str, lines: int = 200) -> str:
+    """Read the last N lines of a log file."""
+    try:
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.readlines()
+            return ''.join(content[-lines:])
+    except Exception as e:
+        logger.error(f"Read log failed for {file_path}: {e}")
+        return ""
+
+def analyze_log_with_gemini(log_text: str) -> Dict[str, Any]:
+    """Analyze log text with Gemini AI using the new SDK."""
+    try:
+        api_key = os.getenv('GEMINI_API_KEY')
+        if not api_key:
             logger.warning("GEMINI_API_KEY not set")
-            self.model = None
-    
-    def analyze(self, log_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Analyze log with Gemini."""
-        if not self.model:
-            return {'error': 'Gemini not configured'}
+            return {"error": "API key not set"}
         
+        # UPDATED: Initialize the new Client
+        client = genai.Client(api_key=api_key)
+        
+        prompt = f"""
+        Analyze this application log. Identify:
+        1. Any errors or exceptions
+        2. Key actions performed (e.g., users added, files embedded)
+        3. Potential security or performance issues
+        4. Summary of health status
+        
+        Log:
+        {log_text[:5000]} # Limit size for token constraints
+        
+        Provide JSON output strictly with these keys: errors, actions, issues, status. Do not include markdown formatting like ```json.
+        """
+        
+        logger.info("🔮 Sending log to Gemini 2.5 Flash for analysis...")
+        
+        # UPDATED: Use the new generation syntax
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt,
+        )
+        
+        result = response.text.strip()
+        
+        # Strip potential markdown formatting that Gemini might add
+        if result.startswith("```json"):
+            result = result[7:-3].strip()
+        elif result.startswith("```"):
+            result = result[3:-3].strip()
+            
         try:
-            metadata = log_data.get('metadata', {})
-            errors = log_data.get('errors', [])
-            api_calls = log_data.get('api_calls', [])
-            content = log_data.get('full_content', '')
+            return json.loads(result)
+        except json.JSONDecodeError:
+            logger.warning("Gemini output was not valid JSON. Returning raw text.")
+            return {"raw_analysis": result}
             
-            # Build prompt
-            prompt = f"""
-Analyze this SP-LineBot application log and provide:
-1. **Critical Issues**: List the most severe errors
-2. **Root Causes**: What likely caused each issue?
-3. **Recommendations**: How to fix each issue
-4. **Performance Notes**: Any bottlenecks or slow operations?
-5. **Security Notes**: Any exposed credentials or risky patterns?
-
-Metadata:
-- File: {metadata.get('file')}
-- Total Lines: {metadata.get('lines_total')}
-- Errors Found: {metadata.get('errors_found')}
-- API Calls: {metadata.get('api_calls_count')}
-
-Errors Summary:
-{json.dumps(errors[:5], indent=2)}
-
-API Operations:
-{json.dumps(api_calls[:3], indent=2)}
-
-Log Content (last 500 chars):
-{content[-500:] if content else 'N/A'}
-
-Please be concise and actionable. Format as JSON.
-"""
-            
-            logger.info("🔮 Sending log to Gemini for analysis...")
-            
-            response = self.model.generate_content(
-                prompt,
-                generation_config={
-                    'max_output_tokens': 1024,
-                    'temperature': 0.3  # Low temperature for analytical output
-                }
-            )
-            
-            analysis_text = response.text.strip()
-            
-            # Try to parse as JSON
-            try:
-                analysis = json.loads(analysis_text)
-            except:
-                # If not JSON, wrap in dict
-                analysis = {
-                    'analysis': analysis_text,
-                    'format': 'text'
-                }
-            
-            logger.info("✅ Gemini analysis complete")
-            return analysis
-        except Exception as e:
-            logger.error(f"Gemini analysis failed: {e}")
-            return {'error': str(e)}
-
-# ============================================================================
-# MAIN ANALYSIS WORKFLOW
-# ============================================================================
+    except Exception as e:
+        logger.error(f"Gemini log analysis failed: {e}")
+        return {"error": str(e)}
 
 def analyze_all_logs() -> Dict[str, Any]:
-    """Analyze all available logs."""
+    """Find and analyze all relevant logs."""
     results = {
         'timestamp': datetime.utcnow().isoformat(),
         'logs_analyzed': [],
-        'summary': {}
+        'summary': {'total_errors': 0}
     }
     
-    try:
-        # Find logs
-        log_files = find_vscode_logs()
-        if not log_files:
-            logger.warning("No log files found")
-            return results
+    # Analyze App Logs (Priority)
+    app_logs = find_app_logs()
+    for log_file in app_logs:
+        logger.info(f"📄 Analyzing app log: {log_file}")
+        log_text = read_log_tail(log_file, lines=100)
         
-        logger.info(f"Found {len(log_files)} log files")
-        
-        # Parse logs
-        analyzer = GeminiLogAnalyzer()
-        
-        for log_file in log_files[:5]:  # Analyze top 5 logs only
-            try:
-                parser = LogParser(log_file)
-                if not parser.load():
-                    continue
+        if log_text:
+            analysis = analyze_log_with_gemini(log_text)
+            
+            # Count errors if available
+            errors = analysis.get('errors', [])
+            if isinstance(errors, list):
+                results['summary']['total_errors'] += len(errors)
                 
-                log_data = parser.parse()
-                
-                # Analyze with Gemini
-                analysis = analyzer.analyze(log_data)
-                
-                results['logs_analyzed'].append({
-                    'file': log_file,
-                    'metadata': parser.metadata,
-                    'analysis': analysis
-                })
-            except Exception as e:
-                logger.error(f"Process log {log_file} failed: {e}")
-        
-        # Summary
-        results['summary'] = {
-            'logs_processed': len(results['logs_analyzed']),
-            'total_errors': sum(len(log.get('metadata', {}).get('errors_found', 0)) 
-                               for log in results['logs_analyzed']),
-            'status': 'complete'
-        }
-        
-        return results
-    except Exception as e:
-        logger.error(f"Analysis workflow failed: {e}")
-        results['error'] = str(e)
-        return results
+            results['logs_analyzed'].append({
+                'file': os.path.basename(log_file),
+                'type': 'app_log',
+                'analysis': analysis,
+                'metadata': {
+                    'size_bytes': os.path.getsize(log_file),
+                    'errors_found': len(errors) if isinstance(errors, list) else 0
+                }
+            })
+    
+    return results
 
 def save_analysis(results: Dict[str, Any], output_file: str = 'logs/analysis_report.json'):
-    """Save analysis report."""
+    """Save analysis results to JSON."""
     try:
-        Path(output_file).parent.mkdir(parents=True, exist_ok=True)
-        
+        Path(output_file).parent.mkdir(exist_ok=True)
         with open(output_file, 'w') as f:
             json.dump(results, f, indent=2)
         
@@ -313,7 +197,6 @@ if __name__ == '__main__':
         print(f"\n📄 First Log: {first_log['file']}")
         print(f"Errors Found: {first_log['metadata'].get('errors_found', 0)}")
         
-        if 'analysis' in first_log and isinstance(first_log['analysis'], dict):
-            print("\n💡 AI Analysis Highlights:")
-            for key, value in list(first_log['analysis'].items())[:3]:
-                print(f"• {key}: {str(value)[:100]}...")
+        if 'analysis' in first_log:
+            print("\nAnalysis Status:")
+            print(first_log['analysis'].get('status', 'N/A'))
