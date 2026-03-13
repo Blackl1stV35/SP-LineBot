@@ -16,7 +16,9 @@ from collections import defaultdict
 import torch
 import requests
 from sentence_transformers import SentenceTransformer, util
-import google.generativeai as genai
+# UPDATED: Import the new GenAI SDK and types
+from google import genai
+from google.genai import types
 
 logger = logging.getLogger(__name__)
 
@@ -229,16 +231,22 @@ async def query_gemini_async(prompt: str, context: str = "") -> str:
             logger.warning("GEMINI_API_KEY not set")
             return None
         
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-pro')
+        # UPDATED: Initialize the new Client
+        client = genai.Client(api_key=api_key)
         
         full_prompt = f"{context}\n\nQuery: {prompt}" if context else prompt
         
         logger.debug(f"🔮 Gemini query: {prompt[:80]}...")
-        response = model.generate_content(full_prompt, generation_config={
-            'max_output_tokens': 256,
-            'temperature': 0.7
-        })
+        
+        # UPDATED: Use the new generation syntax and types.GenerateContentConfig
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=full_prompt,
+            config=types.GenerateContentConfig(
+                max_output_tokens=256,
+                temperature=0.7,
+            )
+        )
         
         result = response.text.strip()
         logger.info(f"✅ Gemini response: {result[:100]}...")
