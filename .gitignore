@@ -76,5 +76,4 @@ models/
 
 # Drive sync (large files)
 external_drive_cache/
-gdrive_sync/
-
+drive_sync/
