@@ -23,7 +23,8 @@ from fastapi.responses import JSONResponse
 from uvicorn import run as uvicorn_run
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
-from linebot.v3.messaging import Configuration, ApiClient, MessagingApi
+# Updated LineBot imports for correct message formatting
+from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, PushMessageRequest, TextMessage
 from linebot.v3.webhooks import MessageEvent, TextMessageContent, ImageMessageContent, AudioMessageContent
 
 # Import custom modules
@@ -163,8 +164,8 @@ def handle_text_message(event: MessageEvent):
         logger.warning(f"🚫 Spam detected from {user_id}")
         return
     
-    # Fetch user context (Drive files, history)
-    user_context = fetch_user_drive_context(user_id)
+    # Fetch user context (Drive files, history) - properly passing drive_handler
+    user_context = fetch_user_drive_context(user_id, drive_handler)
     
     # Intent parsing with Ollama primary
     intent, confidence = parse_intent(text, ollama_client)
@@ -178,10 +179,13 @@ def handle_text_message(event: MessageEvent):
         # Low confidence - escalate to Gemini
         response = handle_gemini_escalation(text, user_id)
     
-    # Send response
+    # Send response using PushMessageRequest
     with ApiClient(configuration) as api_client:
         api = MessagingApi(api_client)
-        api.push_message(user_id, {"type": "text", "text": response})
+        api.push_message(PushMessageRequest(
+            to=user_id,
+            messages=[TextMessage(text=response)]
+        ))
 
 @handler.add(MessageEvent, message=ImageMessageContent)
 def handle_image_message(event: MessageEvent):
@@ -258,10 +262,13 @@ def process_voice_message(user_id: str, message_id: str):
         intent, confidence = parse_intent(text, ollama_client)
         response = handle_intent(intent, user_id, {})
         
-        # Send response
+        # Send response using PushMessageRequest
         with ApiClient(configuration) as api_client:
             api = MessagingApi(api_client)
-            api.push_message(user_id, {"type": "text", "text": response})
+            api.push_message(PushMessageRequest(
+                to=user_id,
+                messages=[TextMessage(text=response)]
+            ))
         
         # Clean temp
         os.remove(audio_path)
@@ -282,7 +289,7 @@ def handle_intent(intent: str, user_id: str, context: Dict[str, Any]) -> str:
         return f"Intent: {intent}\nContext: {json.dumps(context, ensure_ascii=False)[:200]}"
 
 def handle_gemini_escalation(text: str, user_id: str) -> str:
-    """Fallback to Gemini API when Ollama confidence is low."""
+    """Fallback to Gemini API when Ollama confidence is low using new google-genai SDK."""
     try:
         from google import genai
         
@@ -291,7 +298,7 @@ def handle_gemini_escalation(text: str, user_id: str) -> str:
         
         prompt = f"User query (Line Bot): {text}\nProvide concise response (50 words max)."
         
-        # Use models.generate_content instead of GenerativeModel
+        # Generate content with the new SDK structure
         response = client.models.generate_content(
             model='gemini-2.5-flash',
             contents=prompt,
