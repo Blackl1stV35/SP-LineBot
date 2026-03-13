@@ -6,6 +6,8 @@ Supports multimodal (text, image, voice) with embedding-based RL suggestions.
 
 import os
 from dotenv import load_dotenv
+
+# LOAD ENV VARIABLES FIRST
 load_dotenv()
 
 # Create logs directory if it doesn't exist
@@ -24,7 +26,6 @@ from fastapi.responses import JSONResponse
 from uvicorn import run as uvicorn_run
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
-# Updated LineBot imports for correct message formatting
 from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, PushMessageRequest, TextMessage
 from linebot.v3.webhooks import MessageEvent, TextMessageContent, ImageMessageContent, AudioMessageContent
 
@@ -152,7 +153,7 @@ async def webhook(request: Request, background_tasks: BackgroundTasks):
 
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_text_message(event: MessageEvent):
-    """Process text messages with intent chain: Ollama → Gemini → fallback."""
+    """Process text messages with intent chain: Ollama -> Gemini -> fallback."""
     user_id = event.source.user_id
     text = event.message.text
     
@@ -163,8 +164,8 @@ def handle_text_message(event: MessageEvent):
         logger.warning(f"Spam detected from {user_id}")
         return
     
-    # Fetch user context (Drive files, history) - properly passing drive_handler
-    user_context = fetch_user_drive_context(user_id, drive_handler)
+    # Fetch user context (Drive files, history)
+    user_context = admin_handler.get_user_context(user_id)
     
     # Intent parsing with Ollama primary
     intent, confidence = parse_intent(text, ollama_client)
@@ -172,7 +173,7 @@ def handle_text_message(event: MessageEvent):
     
     # Generate response chain
     if confidence > 0.7:
-        # High confidence - use Ollama intent
+        # High confidence - use Ollama intent (ADDED TEXT PARAMETER HERE)
         response = handle_intent(intent, user_id, user_context, text)
     else:
         # Low confidence - escalate to Gemini
@@ -188,11 +189,11 @@ def handle_text_message(event: MessageEvent):
 
 @handler.add(MessageEvent, message=ImageMessageContent)
 def handle_image_message(event: MessageEvent):
-    """Process images: download → OCR (Thai/Eng) → parse → embed."""
+    """Process images: download -> OCR (Thai/Eng) -> parse -> embed."""
     user_id = event.source.user_id
     message_id = event.message.id
     
-    logger.info(f"Image from {user_id} (ID: {message_id})")
+    logger.info(f"[IMAGE] Image from {user_id} (ID: {message_id})")
     
     # Background task
     from fastapi import BackgroundTasks
@@ -228,12 +229,12 @@ def process_image_message(user_id: str, message_id: str):
 
 @handler.add(MessageEvent, message=AudioMessageContent)
 def handle_voice_message(event: MessageEvent):
-    """Process voice: download → Vosk STT → intent → respond."""
+    """Process voice: download -> Vosk STT -> intent -> respond."""
     user_id = event.source.user_id
     message_id = event.message.id
     duration = event.message.duration
     
-    logger.info(f"Voice from {user_id} (duration: {duration}ms)")
+    logger.info(f"[VOICE] Voice from {user_id} (duration: {duration}ms)")
     
     # Background processing
     from fastapi import BackgroundTasks
@@ -259,7 +260,8 @@ def process_voice_message(user_id: str, message_id: str):
         
         # Intent & response (same as text)
         intent, confidence = parse_intent(text, ollama_client)
-        response = handle_intent(intent, user_id, {})
+        user_context = admin_handler.get_user_context(user_id)
+        response = handle_intent(intent, user_id, user_context, text)
         
         # Send response using PushMessageRequest
         with ApiClient(configuration) as api_client:
@@ -281,26 +283,36 @@ def process_voice_message(user_id: str, message_id: str):
 # ============================================================================
 
 def handle_intent(intent: str, user_id: str, context: Dict[str, Any], text: str = "") -> str:
-    """Route to admin commands or general responses."""
+    """Route intent to admin commands or general responses."""
+    
     if intent.startswith("ADMIN_"):
         return admin_handler.execute(intent, user_id, text, context)
         
     elif intent == "DRIVE_SCAN":
-        # 1. Grab the user's specific Drive folder ID from their context
-        folder_id = context.get('drive_folder_id')
+        # Look for the user's mapped Google Drive folder
+        folder_id = context.get('folder_id')
+        
         if not folder_id:
-            return "You don't have a linked Drive folder yet. Ask an admin to add you."
+            return "❌ You don't have a linked Drive folder yet. Ask an admin to add you."
             
-        # 2. Tell the drive_handler to scan the folder and chunk the text
         try:
-            count = drive_handler.batch_embed_documents(folder_id, user_id)
-            return f"Drive scan complete! Successfully read and memorized {count} text chunks from your files."
+            # 1. Scan the folder recursively
+            documents = drive_handler.scan_user_folder(user_id=user_id, folder_id=folder_id)
+            
+            if not documents:
+                return "📂 Your Drive folder is empty or contains no supported text/PDF/Doc files."
+                
+            # 2. Extract text and embed to ChromaDB
+            count = drive_handler.batch_embed_documents(documents=documents, user_id=user_id)
+            
+            return f"✅ Drive scan complete!\n\nFound {len(documents)} files. Successfully read and memorized {count} text chunks into your AI memory."
+            
         except Exception as e:
-            logging.error(f"Drive scan failed: {e}")
-            return f"Error scanning drive: {str(e)}"
+            logger.error(f"Drive scan failed: {e}")
+            return f"❌ Error scanning drive: {str(e)}"
             
     else:
-        # For other intents (like INVENTORY_LOOKUP, etc.)
+        # Placeholder for other intents (INVENTORY_LOOKUP, REPAIR_SUGGEST, etc.)
         return f"Intent: {intent}\nContext: {json.dumps(context, ensure_ascii=False)[:200]}"
 
 def handle_gemini_escalation(text: str, user_id: str) -> str:
