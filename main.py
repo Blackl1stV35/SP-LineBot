@@ -5,6 +5,11 @@ Supports multimodal (text, image, voice) with embedding-based RL suggestions.
 """
 
 import os
+
+# Create logs directory if it doesn't exist
+if not os.path.exists('logs'):
+    os.makedirs('logs')
+    
 import json
 import logging
 from datetime import datetime, timezone, timedelta
@@ -279,12 +284,18 @@ def handle_intent(intent: str, user_id: str, context: Dict[str, Any]) -> str:
 def handle_gemini_escalation(text: str, user_id: str) -> str:
     """Fallback to Gemini API when Ollama confidence is low."""
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
-        model = genai.GenerativeModel('gemini-pro')
+        from google import genai
+        
+        # Initialize the new Client
+        client = genai.Client(api_key=os.getenv('GEMINI_API_KEY'))
         
         prompt = f"User query (Line Bot): {text}\nProvide concise response (50 words max)."
-        response = model.generate_content(prompt)
+        
+        # Use models.generate_content instead of GenerativeModel
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt,
+        )
         
         logger.info(f"Gemini escalation response: {response.text[:100]}")
         return response.text
