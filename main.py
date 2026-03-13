@@ -281,10 +281,26 @@ def process_voice_message(user_id: str, message_id: str):
 # ============================================================================
 
 def handle_intent(intent: str, user_id: str, context: Dict[str, Any], text: str = "") -> str:
-    """Route intent to admin commands or general responses."""
+    """Route to admin commands or general responses."""
     if intent.startswith("ADMIN_"):
         return admin_handler.execute(intent, user_id, text, context)
+        
+    elif intent == "DRIVE_SCAN":
+        # 1. Grab the user's specific Drive folder ID from their context
+        folder_id = context.get('drive_folder_id')
+        if not folder_id:
+            return "You don't have a linked Drive folder yet. Ask an admin to add you."
+            
+        # 2. Tell the drive_handler to scan the folder and chunk the text
+        try:
+            count = drive_handler.batch_embed_documents(folder_id, user_id)
+            return f"Drive scan complete! Successfully read and memorized {count} text chunks from your files."
+        except Exception as e:
+            logging.error(f"Drive scan failed: {e}")
+            return f"Error scanning drive: {str(e)}"
+            
     else:
+        # For other intents (like INVENTORY_LOOKUP, etc.)
         return f"Intent: {intent}\nContext: {json.dumps(context, ensure_ascii=False)[:200]}"
 
 def handle_gemini_escalation(text: str, user_id: str) -> str:
