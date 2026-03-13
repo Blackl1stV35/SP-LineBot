@@ -281,10 +281,10 @@ def process_voice_message(user_id: str, message_id: str):
 # INTENT HANDLERS
 # ============================================================================
 
-def handle_intent(intent: str, user_id: str, context: Dict[str, Any]) -> str:
+def handle_intent(intent: str, user_id: str, context: Dict[str, Any], text: str = "") -> str:
     """Route intent to admin commands or general responses."""
     if intent.startswith("ADMIN_"):
-        return admin_handler.execute(intent, user_id, context)
+        return admin_handler.execute(intent, user_id, text, context)
     else:
         return f"Intent: {intent}\nContext: {json.dumps(context, ensure_ascii=False)[:200]}"
 
