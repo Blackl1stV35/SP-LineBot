@@ -5,6 +5,8 @@ Supports multimodal (text, image, voice) with embedding-based RL suggestions.
 """
 
 import os
+from dotenv import load_dotenv
+load_dotenv()
 
 # Create logs directory if it doesn't exist
 if not os.path.exists('logs'):
@@ -17,7 +19,6 @@ from typing import Optional, Dict, Any
 from pathlib import Path
 
 import torch
-from dotenv import load_dotenv
 from fastapi import FastAPI, Request, HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse
 from uvicorn import run as uvicorn_run
@@ -36,8 +37,6 @@ from admin_commands import AdminCommandHandler
 # ============================================================================
 # CONFIGURATION & INITIALIZATION
 # ============================================================================
-
-load_dotenv()
 
 # Logging setup
 logging.basicConfig(
@@ -174,7 +173,7 @@ def handle_text_message(event: MessageEvent):
     # Generate response chain
     if confidence > 0.7:
         # High confidence - use Ollama intent
-        response = handle_intent(intent, user_id, user_context)
+        response = handle_intent(intent, user_id, user_context, text)
     else:
         # Low confidence - escalate to Gemini
         response = handle_gemini_escalation(text, user_id)

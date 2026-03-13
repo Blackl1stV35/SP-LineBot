@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 # ADMIN PIN AUTHENTICATION
 # ============================================================================
 
-ADMIN_PIN_HASH = os.getenv('ADMIN_PIN_HASH', hashlib.sha256('Spauto12345'.encode()).hexdigest())
+ADMIN_PIN_HASH = os.getenv('ADMIN_PIN_HASH', hashlib.sha256('8899'.encode()).hexdigest())
 USER_DATABASE = Path('drive_sync/users.json')
 
 def verify_admin_pin(pin: str) -> bool:
