@@ -88,7 +88,7 @@ class OllamaLLMClient:
                         "num_predict": 300
                     }
                 },
-                timeout=30
+                timeout=120
             )
             response.raise_for_status()
             
@@ -127,21 +127,19 @@ def query_gemini_fallback(prompt: str, context: str = "") -> Optional[str]:
         logger.error(f"Gemini query failed: {e}")
         return None
 
-def generate_smart_response(prompt: str, context: Optional[str] = "") -> str:
+def generate_smart_response(prompt: str, context: Optional[str] = "", llm_client: Optional[OllamaLLMClient] = None) -> str:
     """Routes query based on language to save tokens and utilize local offline processing."""
     
-    # Check if the query contains Thai
     if is_thai_text(prompt) or is_thai_text(context):
-        # Local Offline execution
-        ollama_client = OllamaLLMClient()
-        response = ollama_client.generate(prompt, context)
+        # Use the passed client, or create one only if absolutely necessary
+        client_to_use = llm_client if llm_client else OllamaLLMClient()
+        response = client_to_use.generate(prompt, context)
         
         if response:
             return response
         else:
             logger.warning("Typhoon offline inference failed. Falling back to Gemini API.")
             
-    # English query OR Local model failed
     logger.info("Routing to cloud Gemini API...")
     response = query_gemini_fallback(prompt, context)
     return response if response else "System error: I could not process your request at this time."
