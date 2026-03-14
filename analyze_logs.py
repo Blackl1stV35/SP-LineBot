@@ -3,6 +3,10 @@
 Log Analysis Script: Parse VS Code/Copilot logs with Gemini AI.
 Extracts errors, actions, and suggests improvements.
 """
+from datetime import datetime, timezone
+from dotenv import load_dotenv
+
+load_dotenv()
 
 import os
 import sys
@@ -112,7 +116,7 @@ def analyze_log_with_gemini(log_text: str) -> Dict[str, Any]:
 
 def analyze_all_logs() -> Dict[str, Any]:
     results = {
-        'timestamp': datetime.utcnow().isoformat(),
+        'timestamp': datetime.now(timezone.utc).isoformat(),
         'logs_analyzed': [],
         'summary': {'total_errors': 0}
     }
