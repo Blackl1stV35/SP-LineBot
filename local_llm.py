@@ -21,7 +21,7 @@ class OllamaLLMClient:
             
     def generate(self, prompt: str, context: Optional[str] = "", history: str = "") -> Optional[str]:
         full_prompt = (
-            f"You are a helpful factory assistant. Answer the user accurately in Thai.\n\n"
+            f"You are a helpful factory assistant. Answer the user accurately.\n\n"
             f"RECENT CONVERSATION HISTORY:\n{history}\n\n"
             f"DATABASE DOCUMENTS:\n{context}\n\nUSER QUERY: {prompt}"
         )
@@ -69,15 +69,23 @@ def query_gemini_fallback(prompt: str, context: str = "", history: str = "") -> 
         return None
 
 def generate_smart_response(prompt: str, context: Optional[str] = "", history: str = "", llm_client: Optional[OllamaLLMClient] = None) -> str:
+    # 1. Try Local Model first if Thai
     if is_thai_text(prompt) or is_thai_text(context):
         if llm_client:
             response = llm_client.generate(prompt, context, history)
             if response: return response
             logger.warning("Typhoon offline inference failed. Falling back to Gemini API.")
             
+    # 2. Try Cloud API
     logger.info("Routing to cloud Gemini API...")
     response = query_gemini_fallback(prompt, context, history)
-    return response if response else "System error: I could not process your request at this time."
+    
+    # 3. ULTIMATE FAILSAFE: If Cloud API gets 429'd, force Local Model even if English
+    if not response and llm_client:
+        logger.warning("Gemini API rejected request (Quota/Network). Forcing local model takeover.")
+        response = llm_client.generate(prompt, context, history)
+        
+    return response if response else "ขออภัยครับ ระบบประมวลผลคลาวด์และโลคอลขัดข้องชั่วคราว กรุณารอสักครู่ (System Overload)"
 
 USER_MESSAGE_HISTORY = defaultdict(list)
 def detect_spam(text: str, user_id: str) -> bool:
