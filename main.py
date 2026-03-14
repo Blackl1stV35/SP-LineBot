@@ -32,7 +32,7 @@ from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, Messagi
 from linebot.v3.webhooks import MessageEvent, TextMessageContent, ImageMessageContent, AudioMessageContent, FileMessageContent
 
 # Import custom modules
-from local_llm import OllamaLLMClient, parse_intent, detect_spam
+from local_llm import OllamaLLMClient, parse_intent, detect_spam, generate_smart_response
 from multimodal import process_image_ocr, process_voice_vosk, extract_metadata_and_embed
 from drive_handler import DriveHandler
 from admin_commands import AdminCommandHandler
@@ -41,7 +41,6 @@ from admin_commands import AdminCommandHandler
 # CONFIGURATION & INITIALIZATION
 # ============================================================================
 
-# --- FIX: Enforce UTF-8 for Windows Console and File Logging ---
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding='utf-8')
 
@@ -136,15 +135,11 @@ def handle_text_message(event: MessageEvent):
         api = MessagingApi(api_client)
         api.push_message(PushMessageRequest(to=user_id, messages=[TextMessage(text=response)]))
 
-# --- FIX: MULTIMODAL BACKGROUND THREADING ---
-
 @handler.add(MessageEvent, message=ImageMessageContent)
 def handle_image_message(event: MessageEvent):
     user_id = event.source.user_id
     message_id = event.message.id
     logger.info(f"[IMAGE] Image from {user_id} (ID: {message_id})")
-    
-    # Use standard threading instead of FastAPI BackgroundTasks
     threading.Thread(target=process_image_message, args=(user_id, message_id)).start()
 
 def process_image_message(user_id: str, message_id: str):
@@ -179,8 +174,6 @@ def handle_voice_message(event: MessageEvent):
     user_id = event.source.user_id
     message_id = event.message.id
     logger.info(f"[VOICE] Voice from {user_id}")
-    
-    # Use standard threading
     threading.Thread(target=process_voice_message, args=(user_id, message_id)).start()
 
 def process_voice_message(user_id: str, message_id: str):
@@ -197,10 +190,12 @@ def process_voice_message(user_id: str, message_id: str):
         logger.info(f"STT Result: {text}")
         
         if text:
-            # Re-route the transcribed text through the text handler
             intent, confidence = parse_intent(text, ollama_client)
             user_context = admin_handler.get_user_context(user_id)
-            response = handle_intent(intent, user_id, user_context, text)
+            if confidence > 0.7:
+                response = handle_intent(intent, user_id, user_context, text)
+            else:
+                response = handle_gemini_escalation(text, user_id)
         else:
             response = "Sorry, I couldn't hear that clearly. Could you repeat?"
         
@@ -218,19 +213,14 @@ def process_voice_message(user_id: str, message_id: str):
 
 @handler.add(MessageEvent, message=FileMessageContent)
 def handle_file_message(event: MessageEvent):
-    """Catch direct file uploads and tell the user to use Drive instead."""
     user_id = event.source.user_id
     logger.info(f"[FILE] Direct file upload attempted by {user_id}")
-    
     msg = "I see you uploaded a file directly! To add documents to my memory, please upload them to your shared Google Drive folder instead, and then type 'Scan drive'."
-    
     with ApiClient(configuration) as api_client:
         api = MessagingApi(api_client)
         api.push_message(PushMessageRequest(to=user_id, messages=[TextMessage(text=msg)]))
 
 def handle_intent(intent: str, user_id: str, context: Dict[str, Any], text: str = "") -> str:
-    """Route intent to admin commands, drive actions, or RAG querying."""
-    
     if intent.startswith("ADMIN_"):
         return admin_handler.execute(intent, user_id, text, context)
         
@@ -247,40 +237,26 @@ def handle_intent(intent: str, user_id: str, context: Dict[str, Any], text: str 
         except Exception as e:
             return f"Error scanning drive: {str(e)}"
             
-    # --- FIX: THE RAG PIPELINE (Retrieval-Augmented Generation) ---
     elif intent in ["INVENTORY_LOOKUP", "REPAIR_SUGGEST", "INVENTORY_UPDATE"]:
         try:
             if not drive_handler.chroma_client:
                 return "Database not initialized."
                 
-            # 1. Look up relevant documents in ChromaDB
             collection = drive_handler.chroma_client.get_collection(name=f"drive_user_{user_id}")
             query_embedding = drive_handler.encoder.encode(text, convert_to_tensor=False).tolist()
             
             results = collection.query(
                 query_embeddings=[query_embedding], 
-                n_results=3 # Fetch top 3 most relevant paragraphs
+                n_results=3 
             )
             
             if not results['documents'] or not results['documents'][0]:
                 return f"I couldn't find any information in your Drive files regarding '{text}'."
                 
-            # 2. Combine the retrieved paragraphs
             context_text = "\n---\n".join(results['documents'][0])
             
-            # 3. Pass the context and the question to Gemini to generate a human-like answer
-            from google import genai
-            client = genai.Client(api_key=os.getenv('GEMINI_API_KEY'))
-            
-            prompt = (
-                f"You are a helpful business assistant. Using ONLY the following information retrieved from the user's database, "
-                f"answer their query. Be concise and professional.\n\n"
-                f"DATABASE DOCUMENTS:\n{context_text}\n\n"
-                f"USER QUERY: {text}"
-            )
-            
-            response = client.models.generate_content(model='gemini-2.5-flash', contents=prompt)
-            return response.text
+            # SMART ROUTER CALL INSTEAD OF GEMINI
+            return generate_smart_response(prompt=text, context=context_text)
             
         except Exception as e:
             logger.error(f"RAG query failed: {e}")
@@ -290,15 +266,8 @@ def handle_intent(intent: str, user_id: str, context: Dict[str, Any], text: str 
         return f"Intent: {intent} registered. Functionality is still being built!"
 
 def handle_gemini_escalation(text: str, user_id: str) -> str:
-    try:
-        from google import genai
-        client = genai.Client(api_key=os.getenv('GEMINI_API_KEY'))
-        prompt = f"User query: {text}\nProvide a concise response."
-        response = client.models.generate_content(model='gemini-2.5-flash', contents=prompt)
-        return response.text
-    except Exception as e:
-        logger.error(f"Gemini escalation failed: {e}")
-        return "Sorry, I couldn't process that. Please try again."
+    # SMART ROUTER CALL INSTEAD OF GEMINI
+    return generate_smart_response(prompt=text)
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 8000))
