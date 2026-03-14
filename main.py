@@ -255,8 +255,8 @@ def handle_intent(intent: str, user_id: str, context: Dict[str, Any], text: str 
                 
             context_text = "\n---\n".join(results['documents'][0])
             
-            # SMART ROUTER CALL INSTEAD OF GEMINI
-            return generate_smart_response(prompt=text, context=context_text)
+            def handle_gemini_escalation(text: str, user_id: str) -> str:
+                return generate_smart_response(prompt=text, context="", llm_client=ollama_client)
             
         except Exception as e:
             logger.error(f"RAG query failed: {e}")
