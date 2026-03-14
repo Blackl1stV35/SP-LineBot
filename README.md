@@ -1,233 +1,73 @@
-# SP-LineBot v1.0
-**Production-ready Line Bot AI Assistant for Auto Repair Inventory**
+# 🏭 Factory Analytics & Inventory LINE Bot (v1.0)
 
-Local-first architecture with Ollama (primary) + Gemini (fallback), multimodal support (image OCR, voice STT), Google Drive integration, and admin controls.
+A production-ready, multimodal LINE Bot designed for factory environments. It features an Agentic Architecture that integrates Google Drive inventory tracking, real-time database write-backs, conversational RAG, and an intelligent local LLM fallback system.
 
-## 🚀 Quick Start
+## 🌟 Key Features
 
-### Prerequisites
-- Python 3.10+
-- 8GB RAM (4GB Ollama + 4GB app), GTX 1650 CUDA (optional)
-- Windows/macOS/Linux
-- Ollama (https://ollama.ai) — manual start only
-- GitHub CLI optional (for gh repo create)
+* **Agentic Intent Routing:** Automatically decides whether to search inventory, write new memories, or chat normally based on the user's message.
+* **Semantic Data Unrolling:** Transforms complex, dense 2D Excel/CSV inventory matrices into highly searchable semantic text chunks.
+* **Real-Time Memory Write-Back:** Users can tell the bot to remember new inventory draws via LINE chat, and it instantly updates the ChromaDB vector database.
+* **Resilient Hybrid LLM:** Uses Google Gemini API as the primary engine. If the API hits a rate limit (429), it seamlessly falls back to a local Ollama model (Typhoon) with zero downtime.
+* **Multimodal Input:** Supports both text and Thai voice commands (via Vosk STT).
+* **Live Web Dashboard:** A Streamlit web UI that reads the vector memory in real-time to visualize inventory requisitions and employee statistics.
 
-### Setup (5 minutes)
+## 📂 Project Structure
 
-1. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
+\`\`\`text
+├── main.py              # FastAPI server & LINE Webhook handler
+├── agentic_router.py    # Analyzes user intent and routes to tools
+├── drive_handler.py     # Connects to Google Drive, downloads files
+├── drive_scanner.py     # Parses Excel/CSV into semantic RAG chunks
+├── db_updater.py        # Handles manual memory write-backs to ChromaDB
+├── local_llm.py         # Manages Gemini API and Local Ollama fallback
+├── multimodal.py        # Handles Vosk Speech-to-Text for voice messages
+├── dashboard.py         # Streamlit Web UI for inventory analytics
+├── inspect_db.py        # CLI utility to verify ChromaDB chunk formatting
+├── admin_commands.py    # System commands (e.g., "สแกนไดรฟ์")
+└── .env                 # Environment variables (Keys, Tokens)
+\`\`\`
 
-2. **Configure .env:**
-   ```
-   LINE_CHANNEL_SECRET=your_line_secret
-   LINE_CHANNEL_ACCESS_TOKEN=your_line_token
-   GOOGLE_SERVICE_ACCOUNT_JSON=google-service-account.json
-   GEMINI_API_KEY=your_gemini_key
-   ADMIN_PIN_HASH=<sha256_hash_of_pin>
-   OLLAMA_HOST=http://127.0.0.1:11434
-   PORT=8000
-   ```
+## 🚀 Setup & Installation
 
-3. **Start Ollama (separate terminal):**
-   ```bash
-   ollama serve
-   ```
+**1. Prerequisites:**
+* Python 3.10+
+* [Ollama](https://ollama.com/) installed and running locally with the Typhoon model (`ollama run typhoon`).
+* Google Cloud Service Account JSON (for Drive access).
+* LINE Developers Messaging API keys.
 
-4. **Start app:**
-   ```bash
-   python main.py
-   ```
-   - Server runs on `0.0.0.0:8000`
-   - GET `/health` for status check
+**2. Environment Variables (`.env`):**
+\`\`\`ini
+LINE_CHANNEL_SECRET=your_secret
+LINE_CHANNEL_ACCESS_TOKEN=your_token
+GOOGLE_API_KEY=your_gemini_key
+SERVICE_ACCOUNT_FILE=path/to/your/google_credentials.json
+DRIVE_FOLDER_ID=your_target_google_drive_folder_id
+\`\`\`
 
-5. **Expose via ngrok:**
-   ```bash
-   ngrok http 8000
-   ```
-   Configure Line webhook to ngrok URL `/callback`
+**3. Install Dependencies:**
+\`\`\`bash
+pip install -r requirements.txt
+\`\`\`
 
----
+**4. Run the Bot:**
+\`\`\`bash
+uvicorn main:app --host 0.0.0.0 --port 8000
+# Expose via Ngrok if testing locally: ngrok http 8000
+\`\`\`
 
-## 📁 Project Structure
+**5. Run the Dashboard:**
+\`\`\`bash
+streamlit run dashboard.py
+\`\`\`
 
-| File | Purpose |
-|------|---------|
-| `main.py` | FastAPI webhook handler (Line, text/image/voice) |
-| `local_llm.py` | Ollama client + intent parsing + spam detection |
-| `multimodal.py` | Image OCR (Thai/Eng), voice STT (Vosk), embedding |
-| `drive_handler.py` | Google Drive scan, batch embedding with Chroma |
-| `admin_commands.py` | User management (add/delete/list), PIN auth |
-| `analyze_logs.py` | Log analysis script with Gemini insights |
-| `.gitignore` | Safety: excludes secrets, caches, large files |
-| `requirements.txt` | All dependencies (FastAPI, torch, Ollama, etc.) |
+## 🛠️ Usage Flow
+1. Upload an Excel inventory sheet to the connected Google Drive.
+2. Type `สแกนไดรฟ์` in the LINE chat. The system will download, parse, and memorize the data.
+3. Ask questions in natural Thai: *"เดือน 2 ใครเบิกสีพ่นอุดดำเงาบ้าง"*
+4. Add data dynamically: *"จดบันทึกย้อนหลัง สมชายเบิกทินเนอร์ 5 แกลลอน"*
+5. Check the Dashboard to see the newly logged data appear instantly.
 
----
-
-## 🔐 Security
-
-✅ **No Hardcoded Secrets**
-- All keys in `.env` (excluded from git via .gitignore)
-- Pin-based admin auth (SHA256 hashing)
-
-✅ **File Safety**
-- Ignores: `.env`, `google-service-account*.json`, `*.db`, `logs/`, `vector_db/`
-- Temp files cleaned automatically
-
-✅ **API Rate Limiting**
-- Gemini: Free tier (15 RPM, 1500 RPD)
-- Message spam detection included
-- Concurrent image processing capped at 5
-
----
-
-## 📊 Scalability Features
-
-✅ **40 Users Support**
-- Per-user Chroma collections
-- Message history decay (60s)
-- Batch intent parsing
-- Threaded multimodal processing
-
-✅ **Low-Resource Design**
-- CUDA optional (CPU fallback)
-- SentenceTransformer caching
-- Ollama local (no network overhead)
-- Processed files cache (no re-embedding)
-
----
-
-## 🤖 AI Architecture
-
-### Intent Chain
-```
-User Message → Ollama (local LLM) → Intent + Confidence
-             ↓ (if conf < 0.7)
-           Gemini API → Better Response
-```
-
-### Multimodal Pipeline
-```
-Image → EasyOCR (Thai/Eng) → Text Extraction → Embed
-Voice → Vosk STT → Text → Intent → Response
-```
-
-### Drive Integration
-```
-Google Drive → Scan (recursive) → Extract Text → Chunk & Embed → Chroma Store
-```
-
----
-
-## 🛠️ Admin Commands
-
-(Requires PIN auth in context)
-
-- **Add User:** `ADMIN_ADD_USER [user_id] [name]`
-  - Auto-creates Drive folder
-- **Delete User:** `ADMIN_DEL_USER [user_id]`
-- **List Users:** `ADMIN_LIST_USERS`
-
----
-
-## 📈 Monitoring
-
-### Health Check
-```bash
-curl http://localhost:8000/health
-```
-Response: GPU status, Ollama health
-
-### Logs
-- Application: `logs/sp_linebot.log`
-- Analysis script: `python analyze_logs.py`
-
-### User Database
-- Location: `drive_sync/users.json`
-- Processed files: `drive_sync/processed_files.json`
-
----
-
-## 🚨 Troubleshooting
-
-| Issue | Solution |
-|-------|----------|
-| Ollama connection timeout | Ensure `ollama serve` is running in separate terminal |
-| "No Line credentials" | Check LINE_CHANNEL_SECRET/TOKEN in .env |
-| GPU not detected | CPU fallback active, performance will be slower |
-| Gemini quota exceeded | Wait or upgrade to paid tier |
-| Chroma connection error | Ensure chromadb installed (`pip install chromadb`) |
-
----
-
-## 📝 Example Usage (Line Bot)
-
-**User:** "Stock khmer parts?"  
-**Bot:** Runs intent parser → "INVENTORY_LOOKUP" → Queries Drive → Returns availability
-
-**User:** [Sends image of repair order]  
-**Bot:** OCR extract → Embed in Chroma → Suggest matching tasks
-
-**User:** [Sends voice: "Schedule service"]  
-**Bot:** Vosk STT → Intent → Calendar integration
-
----
-
-## 🔧 Development
-
-### Add New Intent
-1. Update `FIXED_COMMANDS` in `local_llm.py`
-2. Add handler in `main.py` `handle_intent()`
-3. Restart app
-
-### Extend Multimodal
-- Add language: `languages=['th', 'en', 'zh']` in `multimodal.py`
-- Add Vosk model: Download from alphacephei.com
-
-### Custom Embedding Model
-- Replace `all-MiniLM-L6-v2` in `drive_handler.py` & `local_llm.py`
-- Options: `sentence-bert`, `multilingual-MiniLM`, etc.
-
----
-
-## 📦 Dependencies
-
-See `requirements.txt` for full list:
-- **FastAPI/Uvicorn** — Web framework
-- **Line Bot SDK** — Line messaging
-- **Torch** — Deep learning (GPU support)
-- **SentenceTransformers** — Embedding model
-- **Chroma** — Vector database
-- **EasyOCR** — Image text recognition
-- **Vosk** — Offline STT
-- **Ollama** — Local LLM client
-- **Google APIs** — Drive, Generative AI
-
----
-
-## 📄 License
-
-Proprietary — SP-LineBot (Internal use)
-
----
-
-## 🎯 Roadmap
-
-- [ ] Thai language tokenization improvements
-- [ ] Multi-turn conversation memory
-- [ ] Webhook signature caching
-- [ ] Mobile app integration
-- [ ] Dashboard for log analysis
-- [ ] ABM (Account-Based Messaging)
-
----
-
-## 📞 Support
-
-Issues? Check logs:
-```bash
-tail -f logs/sp_linebot.log
-```
-
-Last updated: **March 13, 2026** | UTC+7 (Bangkok)
+## 🔜 Roadmap (v1.1)
+* Fix local LLM (Typhoon) prompt leaking/formatting in chat responses.
+* Increase Agentic Router timeout thresholds for local hardware.
+* Deploy to a dedicated cloud server.
