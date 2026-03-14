@@ -196,7 +196,6 @@ class DriveHandler:
         if not self.chroma_client or not self.encoder: return 0
         embedded_count = 0
         
-        # Import your smart parser
         from drive_scanner import parse_dense_inventory_csv
         
         try:
@@ -204,8 +203,6 @@ class DriveHandler:
             for doc in documents:
                 try:
                     ext = Path(doc['name']).suffix.lower()
-                    
-                    # 1. Download file to temp path
                     request = self.drive_service.files().get_media(fileId=doc['id'])
                     file_stream = io.BytesIO()
                     downloader = MediaIoBaseDownload(file_stream, request)
@@ -217,13 +214,11 @@ class DriveHandler:
                     with open(temp_path, 'wb') as f:
                         f.write(file_stream.getbuffer())
                     
-                    # 2. Extract and Chunk
                     chunks = []
                     if ext == '.csv':
-                        logger.info(f"Using smart CSV parser for {doc['name']}")
+                        logger.info(f"Using semantic unroller for {doc['name']}")
                         chunks = parse_dense_inventory_csv(temp_path)
                     else:
-                        # Fallback to standard extraction for PDFs, Word, etc.
                         text = ""
                         if ext == '.pdf': text = self._extract_pdf(temp_path)
                         elif ext in ['.docx', '.doc']: text = self._extract_docx(temp_path)
@@ -231,18 +226,12 @@ class DriveHandler:
                             with open(temp_path, 'r', encoding='utf-8', errors='ignore') as f: text = f.read()
                         elif ext in ['.xlsx', '.xls']: 
                             text = self._extract_excel(temp_path)
-                            
                         if text:
                             chunks = self._chunk_text(text, chunk_size=500)
                     
-                    # Clean up temp file
-                    if os.path.exists(temp_path): 
-                        os.remove(temp_path)
+                    if os.path.exists(temp_path): os.remove(temp_path)
+                    if not chunks: continue
                     
-                    if not chunks: 
-                        continue
-                    
-                    # 3. Embed chunks into ChromaDB
                     for i, chunk in enumerate(chunks):
                         embedding = self.encoder.encode(chunk, convert_to_tensor=False)
                         collection.add(
@@ -254,8 +243,7 @@ class DriveHandler:
                         embedded_count += 1
                     
                     self.processed_files[doc['hash']] = {'file_id': doc['id'], 'name': doc['name']}
-                except Exception as e: 
-                    logger.error(f"Document embedding failed for {doc['name']}: {e}")
+                except Exception as e: logger.error(f"Embedding failed: {e}")
             
             self._save_processed_files()
             return embedded_count

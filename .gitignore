@@ -70,6 +70,7 @@ Thumbs.db
 .pytest_cache/
 .coverage
 htmlcov/
+inspect_db.py
 
 # Ollama models (local, large)
 ollama_models/

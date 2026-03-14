@@ -3,52 +3,54 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def parse_dense_inventory_csv(filepath):
+def parse_dense_inventory_csv(filepath: str):
     """
-    Parses a 2D matrix CSV where:
-    Row 0: Headers (Item names)
-    Row 1: Month info in Col 0
-    Row 2+: Employee names in Col 0, quantities in subsequent columns
-    Returns pre-formatted semantic text chunks ready for vector database insertion.
+    Transforms a 2D empty matrix into dense, highly-searchable semantic text chunks.
     """
     chunks = []
     try:
-        # utf-8-sig handles potential BOM characters common in Excel-exported CSVs
+        # utf-8-sig handles Thai characters and Excel BOM perfectly
         with open(filepath, 'r', encoding='utf-8-sig') as f:
             reader = csv.reader(f)
             rows = list(reader)
 
         if len(rows) < 2:
-            logger.warning(f"File {filepath} does not have enough rows.")
             return chunks
 
+        # Row 0 contains our Items (Headers)
         headers = rows[0]
-        # Month string usually sits at row 1, col 0
+        
+        # Row 1, Col 0 usually contains the Month (e.g., "เดือน1/2569")
         month_info = rows[1][0].strip() if len(rows[1]) > 0 else "Unknown Month"
 
+        # Loop through employees (Row 2 downwards)
         for row in rows[2:]:
             if not row or not row[0].strip():
-                continue
-            
+                continue # Skip empty rows
+                
             employee_name = row[0].strip()
             items_drawn = []
             
-            # Iterate through columns to find which items this employee drew
+            # Loop through the columns for this specific employee
             for col_idx in range(1, len(row)):
                 if col_idx < len(headers):
-                    item_name = headers[col_idx].strip()
                     qty = row[col_idx].strip()
+                    item_name = headers[col_idx].strip()
                     
-                    # If quantity exists, pair it with the header name
-                    if qty and item_name:
+                    # ONLY record if the quantity is not empty
+                    if qty and qty != "":
                         items_drawn.append(f"{item_name} จำนวน {qty}")
 
-            # Only create a chunk if the employee actually drew items
+            # If the employee actually drew something, create a rich memory chunk
             if items_drawn:
-                chunk_text = f"ข้อมูลเดือน: {month_info}\nชื่อพนักงาน: {employee_name}\nรายการเบิกวัสดุสิ้นเปลือง: " + ", ".join(items_drawn)
+                chunk_text = (
+                    f"ข้อมูลเดือน: {month_info}\n"
+                    f"ชื่อพนักงาน: {employee_name}\n"
+                    f"รายการเบิกวัสดุสิ้นเปลือง: " + ", ".join(items_drawn)
+                )
                 chunks.append(chunk_text)
 
     except Exception as e:
-        logger.error(f"Error parsing CSV {filepath}: {str(e)}")
+        logger.error(f"Error parsing semantic CSV {filepath}: {str(e)}")
 
     return chunks

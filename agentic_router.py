@@ -1,48 +1,60 @@
 import os
 from google import genai
 from google.genai import types
+from dotenv import load_dotenv
 
-def tool_scan_drive(user_id: str):
-    """Trigger this when the user asks to scan, read, or sync their Google Drive."""
-    return {"status": "success", "action_taken": "Triggered Drive Scan sequence"}
+load_dotenv()
 
-def tool_check_inventory(item_name: str):
-    """Trigger this when the user asks about stock levels or who drew an item."""
-    return {"status": "success", "search_term": item_name, "action_taken": "Searched ChromaDB"}
+def tool_scan_drive():
+    """ใช้ฟังก์ชันนี้เมื่อผู้ใช้ต้องการ สแกนไดรฟ์, อัพเดทไฟล์, หรือดึงข้อมูลจาก Google Drive"""
+    pass
+
+def tool_check_inventory(search_query: str):
+    """ใช้ฟังก์ชันนี้เมื่อผู้ใช้ต้องการ ค้นหาข้อมูลการเบิก, เช็คสต็อก, หรือถามว่าใครเบิกอะไรไปบ้าง
+    Args:
+        search_query: สิ่งที่ผู้ใช้ต้องการค้นหา เช่น 'สีดำเงา', 'โจ้เบิกอะไร', 'เดือน 2'
+    """
+    pass
+
+def tool_add_memory(note: str):
+    """ใช้ฟังก์ชันนี้เมื่อผู้ใช้ต้องการ บันทึกข้อมูลใหม่, เพิ่มสต็อก, ลดสต็อก, หรือจดบันทึก
+    Args:
+        note: สรุปข้อความที่ต้องการบันทึก เช่น 'โจ้เบิกสี 2 ป๋อง', 'รับของเข้า 5 ลัง'
+    """
+    pass
 
 def tool_general_chat():
-    """Trigger this for general conversation, greetings, or questions not related to the database."""
-    return {"status": "success", "action_taken": "Standard LLM response generation"}
+    """ใช้ฟังก์ชันนี้สำหรับการพูดคุยทั่วไป ทักทาย ถามวิธีซ่อมแซม หรือคำถามที่ไม่เกี่ยวกับสต็อก"""
+    pass
 
-def agentic_intent_parser(user_message: str):
+def analyze_intent(user_message: str):
     """
-    Replaces FIXED_COMMANDS and SentenceTransformers.
-    Lets the LLM dynamically route the intent based on context.
+    Evaluates user message and decides the action.
     """
     client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
     
-    # We pass the functions to the LLM so it knows what it is capable of doing
-    model = client.models.generate_content(
-        model='gemini-2.5-flash',
-        contents=user_message,
-        config=types.GenerateContentConfig(
-            tools=[tool_scan_drive, tool_check_inventory, tool_general_chat],
-            temperature=0.0 # Force it to be strictly logical
+    try:
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=f"Analyze this request and call the right tool: {user_message}",
+            config=types.GenerateContentConfig(
+                tools=[tool_scan_drive, tool_check_inventory, tool_add_memory, tool_general_chat],
+                temperature=0.0 # Force strict logical routing
+            )
         )
-    )
-    
-    # Check if the AI decided to call a function
-    if model.function_calls:
-        function_call = model.function_calls[0]
-        called_tool_name = function_call.name
-        args = function_call.args
         
-        print(f"🤖 AGENT DECISION: Executing {called_tool_name} with args {args}")
-        return called_tool_name, args
-        
-    return "tool_general_chat", {}
+        if response.function_calls:
+            call = response.function_calls[0]
+            args_dict = {k: v for k, v in call.args.items()} if call.args else {}
+            return call.name, args_dict
+            
+        return "tool_general_chat", {}
+    except Exception as e:
+        print(f"Agentic Router Error: {e}")
+        return "tool_general_chat", {}
 
 if __name__ == "__main__":
-    # Test it!
-    agentic_intent_parser("สแกนไดรฟ์ให้หน่อยครับ") # Will route to tool_scan_drive
-    agentic_intent_parser("ดารารัตน์เบิกสีดำเงาไปกี่กระป๋อง") # Will route to tool_check_inventory
+    print("Test 1 (Scan):", analyze_intent("สแกนไดรฟ์ให้หน่อยครับ"))
+    print("Test 2 (Search):", analyze_intent("ดารารัตน์เบิกสีดำเงาไปกี่กระป๋อง"))
+    print("Test 3 (Write-Back):", analyze_intent("จดไว้หน่อย เดือน 3 โจ้เบิกทินเนอร์ 2 แกลลอน"))
+    print("Test 4 (Chat):", analyze_intent("สวัสดีครับ วันนี้อากาศดีไหม"))
