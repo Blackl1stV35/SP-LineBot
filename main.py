@@ -76,8 +76,9 @@ def handle_text_message(event: MessageEvent):
     if text.split()[0].isdigit() and "list users" in text.lower():
         response = admin_handler.execute("ADMIN_LIST_USERS", user_id, text, user_context)
     else:
-        # AGENTIC ROUTING
-        action, args = analyze_intent(text)
+        # AGENTIC ROUTING WITH CONTEXTUAL MEMORY
+        history_str = "\n".join([f"User: {h['user']}\nBot: {h['bot']}" for h in USER_CHAT_HISTORY[user_id]])
+        action, args = analyze_intent(text, history=history_str)
         response = execute_agent_action(action, args, user_id, user_context, text)
     
     with ApiClient(configuration) as api_client:
@@ -103,7 +104,10 @@ def process_voice_message(user_id: str, message_id: str):
         
         if text:
             user_context = admin_handler.get_user_context(user_id)
-            action, args = analyze_intent(text)
+            
+            # AGENTIC ROUTING WITH CONTEXTUAL MEMORY
+            history_str = "\n".join([f"User: {h['user']}\nBot: {h['bot']}" for h in USER_CHAT_HISTORY[user_id]])
+            action, args = analyze_intent(text, history=history_str)
             response = execute_agent_action(action, args, user_id, user_context, text)
         else:
             response = "ขออภัยครับ ฟังไม่ถนัด รบกวนพิมพ์หรือพูดอีกครั้งครับ"
@@ -143,7 +147,9 @@ def execute_agent_action(action: str, args: dict, user_id: str, context: Dict[st
 
     elif action == "tool_add_memory":
         note = args.get('note', raw_text)
-        return db_updater.append_to_memory(user_id, note)
+        response = db_updater.append_to_memory(user_id, note)
+        USER_CHAT_HISTORY[user_id].append({"user": raw_text, "bot": response})
+        return response
 
     else: 
         response = generate_smart_response(raw_text, "", history_str, ollama_client)

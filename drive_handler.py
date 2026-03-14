@@ -215,7 +215,8 @@ class DriveHandler:
                         f.write(file_stream.getbuffer())
                     
                     chunks = []
-                    if ext == '.csv':
+                    # NOW IT ROUTES BOTH CSV AND EXCEL TO THE SEMANTIC UNROLLER
+                    if ext in ['.csv', '.xlsx', '.xls']:
                         logger.info(f"Using semantic unroller for {doc['name']}")
                         chunks = parse_dense_inventory_csv(temp_path)
                     else:
@@ -224,8 +225,7 @@ class DriveHandler:
                         elif ext in ['.docx', '.doc']: text = self._extract_docx(temp_path)
                         elif ext == '.txt':
                             with open(temp_path, 'r', encoding='utf-8', errors='ignore') as f: text = f.read()
-                        elif ext in ['.xlsx', '.xls']: 
-                            text = self._extract_excel(temp_path)
+                        
                         if text:
                             chunks = self._chunk_text(text, chunk_size=500)
                     

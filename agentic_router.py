@@ -14,27 +14,21 @@ def tool_scan_drive():
     pass
 
 def tool_check_inventory(search_query: str):
-    """ใช้ฟังก์ชันนี้เมื่อผู้ใช้ต้องการ ค้นหาข้อมูลการเบิก, เช็คสต็อก, หรือถามว่าใครเบิกอะไรไปบ้าง
-    Args:
-        search_query: สิ่งที่ผู้ใช้ต้องการค้นหา เช่น 'สีดำเงา', 'โจ้เบิกอะไร', 'เดือน 2'
-    """
+    """ใช้ฟังก์ชันนี้เมื่อผู้ใช้ต้องการ ค้นหาข้อมูลการเบิก, เช็คสต็อก, หรือถามว่าใครเบิกอะไรไปบ้าง"""
     pass
 
 def tool_add_memory(note: str):
-    """ใช้ฟังก์ชันนี้เมื่อผู้ใช้ต้องการ บันทึกข้อมูลใหม่, เพิ่มสต็อก, ลดสต็อก, หรือจดบันทึก
-    Args:
-        note: สรุปข้อความที่ต้องการบันทึก เช่น 'โจ้เบิกสี 2 ป๋อง', 'รับของเข้า 5 ลัง'
-    """
+    """ใช้ฟังก์ชันนี้เมื่อผู้ใช้ต้องการ บันทึกข้อมูลใหม่, เพิ่มสต็อก, ลดสต็อก, หรือจดบันทึก"""
     pass
 
 def tool_general_chat():
     """ใช้ฟังก์ชันนี้สำหรับการพูดคุยทั่วไป ทักทาย ถามวิธีซ่อมแซม หรือคำถามที่ไม่เกี่ยวกับสต็อก"""
     pass
 
-def fallback_analyze_intent(user_message: str):
+def fallback_analyze_intent(user_message: str, history: str = ""):
     """
-    The Local Brain. Takes over if Google API fails or rate limits.
-    Forces Ollama to output a strict JSON routing object.
+    The Local Brain. Forces Ollama to output a strict JSON routing object.
+    Now includes conversation history to fix "context amnesia".
     """
     logger.info("Triggering Local Ollama Fallback for Agentic Router...")
     
@@ -47,7 +41,10 @@ def fallback_analyze_intent(user_message: str):
     3. "tool_add_memory" : Use to record new data or save notes. Args: "note" (the summary to save).
     4. "tool_general_chat" : Use for greetings, general questions, or anything else. (No args)
     
-    USER MESSAGE: "{user_message}"
+    RECENT CONVERSATION HISTORY (Use this for context if the current message is short):
+    {history}
+    
+    CURRENT USER MESSAGE: "{user_message}"
     
     Respond STRICTLY with ONLY a JSON object in this exact format, nothing else:
     {{"tool": "tool_name", "args": {{"arg_key": "arg_value"}}}}
@@ -63,10 +60,10 @@ def fallback_analyze_intent(user_message: str):
                 "model": model,
                 "prompt": prompt,
                 "stream": False,
-                "format": "json", # Forces the local LLM to lock into JSON mode
-                "options": {"temperature": 0.0} # Absolute zero creativity for routing
+                "format": "json",
+                "options": {"temperature": 0.0}
             },
-            timeout=30
+            timeout=120
         )
         response.raise_for_status()
         result_text = response.json().get('response', '').strip()
@@ -86,16 +83,18 @@ def fallback_analyze_intent(user_message: str):
         logger.error(f"Ollama Fallback Router failed: {e}")
         return "tool_general_chat", {}
 
-def analyze_intent(user_message: str):
+def analyze_intent(user_message: str, history: str = ""):
     """
     Primary Cloud Brain. Evaluates user message and decides the action.
     """
     client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
     
     try:
+        contextual_prompt = f"Recent History:\n{history}\n\nAnalyze this request and call the right tool: {user_message}"
+        
         response = client.models.generate_content(
             model='gemini-2.5-flash',
-            contents=f"Analyze this request and call the right tool: {user_message}",
+            contents=contextual_prompt,
             config=types.GenerateContentConfig(
                 tools=[tool_scan_drive, tool_check_inventory, tool_add_memory, tool_general_chat],
                 temperature=0.0
@@ -110,8 +109,4 @@ def analyze_intent(user_message: str):
         return "tool_general_chat", {}
     except Exception as e:
         logger.warning(f"Gemini Router Error (Likely Rate Limit/429): {e}")
-        # Hand off to the local model instantly
-        return fallback_analyze_intent(user_message)
-
-if __name__ == "__main__":
-    print("Test Fallback directly:", fallback_analyze_intent("ดารารัตน์เบิกสีดำเงาไปกี่กระป๋อง"))
+        return fallback_analyze_intent(user_message, history)
