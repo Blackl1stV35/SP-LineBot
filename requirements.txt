@@ -35,3 +35,6 @@ streamlit==1.55.0
 
 # --- Utilities ---
 python-dotenv==1.2.2
+
+# --- Facebook & Fan page ingesting ---
+apify-client
