@@ -79,3 +79,11 @@ models/
 # Drive sync (large files)
 external_drive_cache/
 drive_sync/
+
+# Knowledge Graph stepup
+.gitnexus
+.claude
+Gitnexus/
+AGENTS.md
+CLAUDE.md
+
